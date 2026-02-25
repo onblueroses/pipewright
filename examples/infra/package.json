@@ -1,0 +1,17 @@
+{
+  "name": "pipewright-infra-example",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "pipewright": "file:../../",
+    "@hono/node-server": "^1.19.9",
+    "better-sqlite3": "^12.6.2",
+    "hono": "^4.12.2",
+    "nodemailer": "^8.0.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/nodemailer": "^7.0.11",
+    "typescript": "^5.4.0"
+  }
+}
