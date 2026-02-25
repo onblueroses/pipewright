@@ -11,11 +11,6 @@ export class ExecutionContext implements IExecutionContext {
 
   setNodeOutput(nodeType: string, output: unknown): void {
     this.vars[nodeType] = output;
-    if (output !== null && typeof output === 'object' && !Array.isArray(output)) {
-      for (const [k, v] of Object.entries(output as Record<string, unknown>)) {
-        this.vars[k] = v;
-      }
-    }
   }
 
   get(path: string): unknown {

@@ -6,7 +6,7 @@ const DEFAULT_MAX_STEPS = 100;
 
 export interface WorkflowOptions {
   maxSteps?: number;
-  onStep?: (event: StepEvent) => void;
+  onStep?: (event: StepEvent) => void | Promise<void>;
 }
 
 export async function runWorkflow(
@@ -112,7 +112,7 @@ async function executeFromNode(
     executedSteps.push({ stepId: currentId, nodeType: step.nodeType, result });
 
     if (onStep) {
-      onStep({
+      await onStep({
         stepId: currentId,
         nodeType: step.nodeType,
         result,
@@ -122,9 +122,6 @@ async function executeFromNode(
 
     if (result.output !== undefined) {
       context.setNodeOutput(currentId, result.output);
-      if (currentId !== step.nodeType) {
-        context.setNodeOutput(step.nodeType, result.output);
-      }
     }
 
     if (!result.success) {

@@ -28,7 +28,7 @@ export function createApprovalApp(deps: ApprovalAppDeps): Hono {
     return c.json(summary);
   });
 
-  app.get('/approve/:id', async (c) => {
+  app.post('/approve/:id', async (c) => {
     const id = c.req.param('id');
     const record = store.load(id);
     if (!record) {
@@ -60,7 +60,7 @@ export function createApprovalApp(deps: ApprovalAppDeps): Hono {
     }
   });
 
-  app.get('/reject/:id', (c) => {
+  app.post('/reject/:id', (c) => {
     const id = c.req.param('id');
     const record = store.load(id);
     if (!record) {

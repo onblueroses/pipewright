@@ -19,11 +19,13 @@ describe('ExecutionContext', () => {
     expect(ctx.get('fetch')).toEqual({ posts: [], count: 0 });
   });
 
-  it('setNodeOutput merges flat keys into root vars', () => {
+  it('setNodeOutput does not merge flat keys into root vars', () => {
     const ctx = createExecutionContext();
     ctx.setNodeOutput('fetch', { posts: [1, 2], count: 2 });
-    expect(ctx.get('count')).toBe(2);
-    expect(ctx.get('posts')).toEqual([1, 2]);
+    expect(ctx.get('count')).toBeUndefined();
+    expect(ctx.get('posts')).toBeUndefined();
+    expect(ctx.get('fetch.count')).toBe(2);
+    expect(ctx.get('fetch.posts')).toEqual([1, 2]);
   });
 
   it('get supports dot-notation path', () => {
