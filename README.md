@@ -1,8 +1,8 @@
 # pipewright
 
-Lightweight TypeScript DAG workflow engine with typed nodes, context interpolation, and human-in-the-loop approval gates.
+Lightweight TypeScript workflow engine with typed nodes, context interpolation, and human-in-the-loop approval gates.
 
-Most workflow engines are either too heavy (Temporal, Inngest) or too simple (just chain promises). pipewright is under 800 lines of TypeScript with a single runtime dependency (Zod). Define typed nodes, wire them into a DAG, and let the engine handle branching, interpolation, and pause/resume for human approval.
+Most workflow engines are either too heavy (Temporal, Inngest) or too simple (just chain promises). pipewright is under 800 lines of TypeScript with a single runtime dependency (Zod). Define typed nodes, wire them into a workflow, and let the engine handle branching, interpolation, and pause/resume for human approval.
 
 ## Architecture
 
@@ -21,11 +21,13 @@ Most workflow engines are either too heavy (Temporal, Inngest) or too simple (ju
                                │
                     ┌──────────▼──────────────┐
                     │   ExecutionContext       │
-                    │  {{node.field}} interp   │
+                    │  {{stepId.field}} interp │
                     │  dot-path + array index  │
                     │  services injection      │
                     └─────────────────────────┘
 ```
+
+The runner walks the graph one node at a time, following `nextNode` pointers. Conditional nodes enable branching (one step, two possible paths), but execution is sequential - there is no parallel fan-out. This keeps the engine simple and deterministic.
 
 ## Install
 
@@ -62,7 +64,7 @@ const ctx = createExecutionContext({}, { config: { userName: 'World' } });
 
 const result = await runWorkflow({
   start: { nodeType: 'greet', input: { name: '{{config.userName}}' } },
-  done: { nodeType: 'end', input: { message: '{{greet.message}}' } },
+  done: { nodeType: 'end', input: { message: '{{start.message}}' } },
 }, 'start', registry, ctx);
 
 console.log(result.steps[1].result.output);
@@ -73,23 +75,20 @@ console.log(result.steps[1].result.output);
 
 - **Node** - unit of work with Zod-validated input/output schemas and an async executor. Four categories: `action`, `logic`, `transform`, `integration`.
 - **Registry** - catalog of nodes. Validates schemas at execution boundaries. Separates metadata (safe for frontend) from executors (server-only).
-- **ExecutionContext** - threads data between nodes via `{{node.field}}` interpolation. Supports dot-notation, array indexing (`items[0].name`), and service injection.
-- **Workflow** - a map of step IDs to `{ nodeType, input }`. The runner follows `nextNode` from each result, forming a DAG. Halts on error or approval gate.
+- **ExecutionContext** - threads data between nodes via `{{stepId.field}}` interpolation. Supports dot-notation, array indexing (`items[0].name`), and service injection.
+- **Workflow** - a map of step IDs to `{ nodeType, input }`. The runner follows `nextNode` from each result. Conditional nodes enable branching. Halts on error or approval gate.
 
-## Built-in Nodes
+## Context and Interpolation
 
-| Node | Category | Description |
-|------|----------|-------------|
-| `conditional` | logic | Branch on a context variable condition (equals, greater_than, contains, exists, and negations) |
-| `delay` | logic | Wait N milliseconds before continuing |
-| `end` | logic | Explicit terminal node - halts the workflow |
-| `approval-gate` | logic | Pause for human approval before continuing |
-| `map` | transform | Map array items through an object template with `{{item.field}}` |
-| `filter` | transform | Filter an array by evaluating a condition on each item |
+Node output is stored under the **step ID** (the key in the workflow map), not the node type. Reference it with `{{stepId.field}}`:
 
-## Interpolation
-
-String values in step inputs are interpolated against the execution context:
+```ts
+const steps = {
+  fetch:   { nodeType: 'http-get', input: { url: '{{config.apiUrl}}' } },
+  process: { nodeType: 'transform', input: { data: '{{fetch.body}}' } },
+  //                                               ^^^^^ step ID, not node type
+};
+```
 
 ```ts
 // Single-var: returns the actual value (array, object, number)
@@ -103,6 +102,17 @@ String values in step inputs are interpolated against the execution context:
 ```
 
 Unknown paths are left as-is. Single-variable templates preserve the original type (not stringified), which is how arrays and objects flow between nodes.
+
+## Built-in Nodes
+
+| Node | Category | Description |
+|------|----------|-------------|
+| `conditional` | logic | Branch on a context variable condition (equals, greater_than, contains, exists, and negations) |
+| `delay` | logic | Wait N milliseconds before continuing |
+| `end` | logic | Explicit terminal node - halts the workflow |
+| `approval-gate` | logic | Pause for human approval before continuing |
+| `map` | transform | Map array items through an object template with `{{item.field}}` |
+| `filter` | transform | Filter an array by evaluating a condition on each item |
 
 ## Approval Gates
 
@@ -122,15 +132,28 @@ The context is preserved across pause/resume - downstream nodes can still interp
 
 ## Step Events
 
-Monitor execution with the `onStep` callback:
+Monitor execution with the `onStep` callback. Both sync and async callbacks are supported:
 
 ```ts
 const result = await runWorkflow(steps, 'start', registry, ctx, {
-  onStep: (event) => {
-    console.log(`${event.stepId}: ${event.result.success ? 'OK' : 'FAIL'} (${event.durationMs}ms)`);
+  onStep: async (event) => {
+    await db.insert('step_log', {
+      stepId: event.stepId,
+      nodeType: event.nodeType,
+      success: event.result.success,
+      durationMs: event.durationMs,
+    });
   },
 });
 ```
+
+## Design Decisions
+
+**No built-in persistence.** The core engine is stateless. `snapshot()` and `ExecutionContext.fromJSON()` give you the serialization boundary - wire your own storage. The `examples/infra/` directory shows a full SQLite + HTTP approval implementation in ~150 lines.
+
+**Sequential execution.** The runner follows one `nextNode` at a time. Conditional nodes branch (pick path A or path B), but there is no parallel fan-out where two independent paths run concurrently. This keeps execution deterministic and the engine simple.
+
+**String errors.** `WorkflowResult.error` is a human-readable string. The structured context (which step failed, which node type, the full execution trace) is already in `WorkflowResult.steps` - the last entry before failure has the step ID, node type, and result.
 
 ## Examples
 

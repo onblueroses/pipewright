@@ -50,8 +50,8 @@ export class EmailNotifier implements EmailNotifierService {
       ${metadataHtml}
       <br/>
       <p>
-        <a href="${approveUrl}" style="display:inline-block;padding:12px 24px;background:#22c55e;color:#fff;text-decoration:none;border-radius:4px;margin-right:8px">Approve</a>
-        <a href="${rejectUrl}" style="display:inline-block;padding:12px 24px;background:#ef4444;color:#fff;text-decoration:none;border-radius:4px">Reject</a>
+        <form method="POST" action="${approveUrl}" style="display:inline"><button type="submit" style="padding:12px 24px;background:#22c55e;color:#fff;border:none;border-radius:4px;margin-right:8px;cursor:pointer;font-size:14px">Approve</button></form>
+        <form method="POST" action="${rejectUrl}" style="display:inline"><button type="submit" style="padding:12px 24px;background:#ef4444;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:14px">Reject</button></form>
       </p>
     `.trim();
 
