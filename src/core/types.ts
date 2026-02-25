@@ -1,4 +1,5 @@
 import type { ZodType } from 'zod';
+import type { CostReport, StepCostReport } from './cost.js';
 
 export type NodeCategory = 'action' | 'logic' | 'integration' | 'transform';
 
@@ -59,6 +60,7 @@ export interface WorkflowResult {
   success: boolean;
   pausedAt?: string;
   error?: string;
+  cost?: CostReport;
 }
 
 export interface StepEvent {
@@ -66,4 +68,5 @@ export interface StepEvent {
   nodeType: string;
   result: NodeResult;
   durationMs: number;
+  cost?: StepCostReport;
 }

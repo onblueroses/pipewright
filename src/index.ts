@@ -3,6 +3,7 @@ export { defineNode } from './core/node.js';
 export { NodeRegistry, createRegistry } from './core/registry.js';
 export { ExecutionContext, createExecutionContext } from './core/context.js';
 export { runWorkflow, resumeWorkflow } from './core/workflow.js';
+export { CostTracker, createCostTracker, wrapLLMService, BudgetExceededError } from './core/cost.js';
 export type {
   NodeDefinition,
   NodeResult,
@@ -16,6 +17,16 @@ export type {
   StepEvent,
 } from './core/types.js';
 export type { WorkflowOptions } from './core/workflow.js';
+export type {
+  CostTrackerOptions,
+  CostReport,
+  StepCostReport,
+  TokenUsage,
+  ModelPricing,
+  PricingTable,
+  BudgetConfig,
+  WrapLLMServiceOptions,
+} from './core/cost.js';
 
 // Shared utilities
 export { evaluate, CONDITION_TYPES } from './nodes/shared/evaluate.js';
