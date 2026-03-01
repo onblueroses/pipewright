@@ -4,10 +4,6 @@ import type { CostReport, StepCostReport } from './cost.js';
 export type NodeCategory = 'action' | 'logic' | 'integration' | 'transform';
 
 export interface NodeCapabilities {
-  /** @deprecated Unused by engine. Reserved for future use. */
-  supportsRerun?: boolean;
-  /** @deprecated Unused by engine. Reserved for future use. */
-  supportsBulkActions?: boolean;
   supportsApproval?: boolean;
 }
 
@@ -19,8 +15,6 @@ export interface NodeDefinition<TInput = unknown, TOutput = unknown> {
   inputSchema: ZodType<TInput>;
   outputSchema: ZodType<TOutput>;
   executor: NodeExecutor<TInput, TOutput>;
-  /** @deprecated Unused by engine. Reserved for future use. */
-  estimatedDuration?: number;
   capabilities?: NodeCapabilities;
 }
 

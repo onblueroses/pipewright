@@ -3,11 +3,11 @@ import { defineNode } from '../../core/node.js';
 import { evaluate, CONDITION_TYPES } from '../shared/evaluate.js';
 
 const inputSchema = z.object({
-  variable: z.string().describe('Dot-notation path in ExecutionContext, e.g. "fetch.count"'),
+  variable: z.string(),
   condition: z.enum(CONDITION_TYPES),
-  value: z.unknown().optional().describe('Comparison value (not required for "exists")'),
-  trueNode: z.string().describe('Step ID to run when condition is true'),
-  falseNode: z.string().describe('Step ID to run when condition is false'),
+  value: z.unknown().optional(),
+  trueNode: z.string(),
+  falseNode: z.string(),
 });
 
 const outputSchema = z.object({

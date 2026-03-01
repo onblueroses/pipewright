@@ -108,14 +108,16 @@ describe('CostTracker', () => {
       });
       tracker.recordUsage(usage('gpt-4', 1000, 0));
 
-      expect(() => tracker.checkBudget()).not.toThrow();
+      tracker.checkBudget();
+      expect(tracker.report().totalCost).toBeLessThan(1.0);
     });
 
     it('does not throw when no budget configured', () => {
       const tracker = createCostTracker({ pricing: PRICING });
       tracker.recordUsage(usage('gpt-4', 1_000_000, 1_000_000));
 
-      expect(() => tracker.checkBudget()).not.toThrow();
+      tracker.checkBudget();
+      expect(tracker.report().totalCost).toBeGreaterThan(0);
     });
   });
 

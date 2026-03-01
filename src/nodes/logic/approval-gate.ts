@@ -7,8 +7,8 @@ export const approvalGateNode = defineNode({
   description: 'Pauses workflow for human approval before continuing to the next step',
   category: 'logic',
   inputSchema: z.object({
-    message: z.string().describe('Summary for the reviewer'),
-    nextNode: z.string().describe('Step to continue to after approval'),
+    message: z.string(),
+    nextNode: z.string(),
   }),
   outputSchema: z.object({
     message: z.string(),

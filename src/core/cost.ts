@@ -37,7 +37,6 @@ export interface BudgetConfig {
 export interface CostTrackerOptions {
   pricing: PricingTable;
   budget?: BudgetConfig;
-  /** 'zero' = record $0 cost for unknown models (default), 'error' = throw. */
   unknownModelPolicy?: 'zero' | 'error';
 }
 
@@ -82,13 +81,25 @@ export class CostTracker {
   private totalCalls = 0;
   private softLimitFired = false;
 
-  /** Set by the workflow runner before each step executes. */
+  // Mutable so wrapLLMService proxies can attribute cost without threading stepId through user code.
   currentStepId: string | undefined;
 
   constructor(options: CostTrackerOptions) {
     this.pricing = options.pricing;
     this.budget = options.budget;
     this.unknownModelPolicy = options.unknownModelPolicy ?? 'zero';
+  }
+
+  private accumulate(map: Map<string, Accumulator>, key: string, usage: TokenUsage, cost: number): void {
+    const existing = map.get(key);
+    if (existing) {
+      existing.calls++;
+      existing.inputTokens += usage.inputTokens;
+      existing.outputTokens += usage.outputTokens;
+      existing.cost += cost;
+    } else {
+      map.set(key, { calls: 1, inputTokens: usage.inputTokens, outputTokens: usage.outputTokens, cost });
+    }
   }
 
   recordUsage(usage: TokenUsage): void {
@@ -108,38 +119,8 @@ export class CostTracker {
     this.totalOutputTokens += usage.outputTokens;
     this.totalCalls++;
 
-    const stepId = this.currentStepId;
-    if (stepId) {
-      const step = this.stepData.get(stepId);
-      if (step) {
-        step.calls++;
-        step.inputTokens += usage.inputTokens;
-        step.outputTokens += usage.outputTokens;
-        step.cost += callCost;
-      } else {
-        this.stepData.set(stepId, {
-          calls: 1,
-          inputTokens: usage.inputTokens,
-          outputTokens: usage.outputTokens,
-          cost: callCost,
-        });
-      }
-    }
-
-    const model = this.modelData.get(usage.model);
-    if (model) {
-      model.calls++;
-      model.inputTokens += usage.inputTokens;
-      model.outputTokens += usage.outputTokens;
-      model.cost += callCost;
-    } else {
-      this.modelData.set(usage.model, {
-        calls: 1,
-        inputTokens: usage.inputTokens,
-        outputTokens: usage.outputTokens,
-        cost: callCost,
-      });
-    }
+    if (this.currentStepId) this.accumulate(this.stepData, this.currentStepId, usage, callCost);
+    this.accumulate(this.modelData, usage.model, usage, callCost);
 
     if (
       this.budget?.softLimit !== undefined &&
@@ -189,10 +170,6 @@ export function createCostTracker(options: CostTrackerOptions): CostTracker {
   return new CostTracker(options);
 }
 
-/**
- * Wrap an LLM service so that specified methods automatically
- * record token usage and check budget before each call.
- */
 export function wrapLLMService<T extends Record<string, unknown>>(
   options: WrapLLMServiceOptions<T>
 ): T {

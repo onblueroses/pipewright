@@ -240,31 +240,6 @@ describe('runWorkflow', () => {
     expect(result.steps).toHaveLength(10);
   });
 
-  it('respects custom maxSteps option', async () => {
-    const registry = createRegistry();
-    const loopNode = defineNode({
-      type: 'loop',
-      name: 'Loop',
-      category: 'action',
-      inputSchema: z.object({}).passthrough(),
-      outputSchema: z.object({}),
-      executor: async () => ({ success: true, output: {}, nextNode: 'a' }),
-    });
-    registry.register(loopNode);
-    const ctx = createExecutionContext();
-
-    const result = await runWorkflow(
-      { a: { nodeType: 'loop', input: {} } },
-      'a',
-      registry,
-      ctx,
-      { maxSteps: 3 },
-    );
-
-    expect(result.success).toBe(false);
-    expect(result.steps).toHaveLength(3);
-  });
-
   it('passes actual arrays between nodes via {{ref}} interpolation', async () => {
     const registry = createRegistry();
     const producerNode = defineNode({

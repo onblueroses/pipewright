@@ -1,4 +1,3 @@
-// Core
 export { defineNode } from './core/node.js';
 export { NodeRegistry, createRegistry } from './core/registry.js';
 export { ExecutionContext, createExecutionContext } from './core/context.js';
@@ -28,11 +27,9 @@ export type {
   WrapLLMServiceOptions,
 } from './core/cost.js';
 
-// Shared utilities
 export { evaluate, CONDITION_TYPES } from './nodes/shared/evaluate.js';
 export type { ConditionType } from './nodes/shared/evaluate.js';
 
-// Built-in nodes
 import { conditionalNode } from './nodes/logic/conditional.js';
 import { delayNode } from './nodes/logic/delay.js';
 import { endNode } from './nodes/logic/end.js';

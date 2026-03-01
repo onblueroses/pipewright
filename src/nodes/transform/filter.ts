@@ -10,7 +10,7 @@ export const filterNode = defineNode({
   category: 'transform',
   inputSchema: z.object({
     items: z.array(z.unknown()),
-    variable: z.string().describe('Dot-notation path relative to each item, e.g. "score"'),
+    variable: z.string(),
     condition: z.enum(CONDITION_TYPES),
     value: z.unknown().optional(),
     nextNode: z.string().optional(),
@@ -18,7 +18,7 @@ export const filterNode = defineNode({
   outputSchema: z.object({
     items: z.array(z.unknown()),
     count: z.number(),
-    filtered: z.number().describe('Number of items removed'),
+    filtered: z.number(),
   }),
   executor: async (input, context) => {
     const filtered = input.items.filter((item) => {
