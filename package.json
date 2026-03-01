@@ -6,7 +6,6 @@
   "repository": { "type": "git", "url": "https://github.com/onblueroses/pipewright" },
   "homepage": "https://github.com/onblueroses/pipewright",
   "license": "MIT",
-  "author": "onblueroses",
   "engines": { "node": ">=18" },
   "type": "module",
   "main": "./dist/index.js",

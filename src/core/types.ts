@@ -4,7 +4,9 @@ import type { CostReport, StepCostReport } from './cost.js';
 export type NodeCategory = 'action' | 'logic' | 'integration' | 'transform';
 
 export interface NodeCapabilities {
+  /** @deprecated Unused by engine. Reserved for future use. */
   supportsRerun?: boolean;
+  /** @deprecated Unused by engine. Reserved for future use. */
   supportsBulkActions?: boolean;
   supportsApproval?: boolean;
 }
@@ -17,6 +19,7 @@ export interface NodeDefinition<TInput = unknown, TOutput = unknown> {
   inputSchema: ZodType<TInput>;
   outputSchema: ZodType<TOutput>;
   executor: NodeExecutor<TInput, TOutput>;
+  /** @deprecated Unused by engine. Reserved for future use. */
   estimatedDuration?: number;
   capabilities?: NodeCapabilities;
 }
@@ -42,7 +45,7 @@ export type NodeMetadata = Omit<NodeDefinition, 'executor' | 'inputSchema' | 'ou
 
 export interface ExecutionContext {
   readonly services: NodeServices;
-  setNodeOutput(nodeType: string, output: unknown): void;
+  setNodeOutput(stepId: string, output: unknown): void;
   get(path: string): unknown;
   set(key: string, value: unknown): void;
   interpolate(template: string): unknown;

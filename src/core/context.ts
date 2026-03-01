@@ -9,8 +9,8 @@ export class ExecutionContext implements IExecutionContext {
     this.vars = { ...initialVars };
   }
 
-  setNodeOutput(nodeType: string, output: unknown): void {
-    this.vars[nodeType] = output;
+  setNodeOutput(stepId: string, output: unknown): void {
+    this.vars[stepId] = output;
   }
 
   get(path: string): unknown {

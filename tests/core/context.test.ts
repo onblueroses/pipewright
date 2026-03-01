@@ -13,7 +13,7 @@ describe('ExecutionContext', () => {
     expect(ctx.get('myKey')).toBe('hello');
   });
 
-  it('setNodeOutput stores under node type key', () => {
+  it('setNodeOutput stores under step ID key', () => {
     const ctx = createExecutionContext();
     ctx.setNodeOutput('fetch', { posts: [], count: 0 });
     expect(ctx.get('fetch')).toEqual({ posts: [], count: 0 });
