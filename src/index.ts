@@ -36,7 +36,9 @@ import { endNode } from './nodes/logic/end.js';
 import { mapNode } from './nodes/transform/map.js';
 import { filterNode } from './nodes/transform/filter.js';
 import { approvalGateNode } from './nodes/logic/approval-gate.js';
+import { testGateNode } from './nodes/logic/test-gate.js';
 
-export { conditionalNode, delayNode, endNode, mapNode, filterNode, approvalGateNode };
+export { conditionalNode, delayNode, endNode, mapNode, filterNode, approvalGateNode, testGateNode };
+export type { ExecResult, ExecOptions, ExecService } from './nodes/logic/test-gate.js';
 
-export const builtInNodes = [conditionalNode, delayNode, endNode, mapNode, filterNode, approvalGateNode] as const;
+export const builtInNodes = [conditionalNode, delayNode, endNode, mapNode, filterNode, approvalGateNode, testGateNode] as const;

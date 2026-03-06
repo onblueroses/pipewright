@@ -117,7 +117,8 @@ describe('NodeRegistry', () => {
     expect(registry.has('map')).toBe(true);
     expect(registry.has('filter')).toBe(true);
     expect(registry.has('approval-gate')).toBe(true);
-    expect(registry.getTypes()).toHaveLength(6);
+    expect(registry.has('test-gate')).toBe(true);
+    expect(registry.getTypes()).toHaveLength(7);
   });
 
   it('validates output schema and throws on violation', async () => {
