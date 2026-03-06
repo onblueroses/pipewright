@@ -112,6 +112,7 @@ Unknown paths are left as-is. Single-variable templates preserve the original ty
 | `end` | logic | Explicit terminal node - halts the workflow |
 | `approval-gate` | logic | Pause for human approval before continuing |
 | `map` | transform | Map array items through an object template with `{{item.field}}` |
+| `test-gate` | logic | Run a command via injected ExecService, branch on exit code (0 = pass, non-zero = fail) |
 | `filter` | transform | Filter an array by evaluating a condition on each item |
 
 ## Approval Gates
@@ -158,7 +159,8 @@ const result = await runWorkflow(steps, 'start', registry, ctx, {
 ## Examples
 
 - [`examples/content-pipeline/`](examples/content-pipeline/) - fetch -> extract -> quality check -> format -> review -> publish
-- [`examples/infra/`](examples/infra/) - SQLite persistence, SMTP email notifications, Hono HTTP approval server
+- [`examples/infra/`](examples/infra/) - SQLite persistence, SMTP email notifications, Hono HTTP approval server, child_process ExecService
+- [`examples/orchestrator-pattern/`](examples/orchestrator-pattern/) - verify-then-fix loop with test-gate and conditional retry
 
 ## License
 
