@@ -1,5 +1,9 @@
 # pipewright
 
+[![CI](https://github.com/onblueroses/pipewright/actions/workflows/ci.yml/badge.svg)](https://github.com/onblueroses/pipewright/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/pipewright)](https://www.npmjs.com/package/pipewright)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 Lightweight TypeScript workflow engine with typed nodes, context interpolation, and human-in-the-loop approval gates.
 
 Most workflow engines are either too heavy (Temporal, Inngest) or too simple (just chain promises). pipewright is ~1,000 lines of TypeScript with a single runtime dependency (Zod). Define typed nodes, wire them into a workflow, and let the engine handle branching, interpolation, and pause/resume for human approval.
