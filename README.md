@@ -2,7 +2,7 @@
 
 Lightweight TypeScript workflow engine with typed nodes, context interpolation, and human-in-the-loop approval gates.
 
-Most workflow engines are either too heavy (Temporal, Inngest) or too simple (just chain promises). pipewright is under 800 lines of TypeScript with a single runtime dependency (Zod). Define typed nodes, wire them into a workflow, and let the engine handle branching, interpolation, and pause/resume for human approval.
+Most workflow engines are either too heavy (Temporal, Inngest) or too simple (just chain promises). pipewright is ~1,000 lines of TypeScript with a single runtime dependency (Zod). Define typed nodes, wire them into a workflow, and let the engine handle branching, interpolation, and pause/resume for human approval.
 
 ## Architecture
 

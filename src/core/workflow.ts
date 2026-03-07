@@ -3,6 +3,7 @@ import type { NodeRegistry } from './registry.js';
 import type { ExecutionContext } from './context.js';
 import type { CostTracker } from './cost.js';
 import { BudgetExceededError } from './cost.js';
+import { z } from 'zod';
 
 const DEFAULT_MAX_STEPS = 100;
 
@@ -120,6 +121,14 @@ async function executeFromNode(
           steps: executedSteps,
           success: false,
           error: err.message,
+        });
+      }
+      if (err instanceof z.ZodError) {
+        const issues = err.issues.map(i => `${i.path.join('.')}: ${i.message}`).join(', ');
+        return withCost({
+          steps: executedSteps,
+          success: false,
+          error: `Node "${step.nodeType}" (step "${currentId}") input validation failed: ${issues}`,
         });
       }
       const error = err instanceof Error ? err.message : String(err);

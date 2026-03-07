@@ -80,7 +80,7 @@ export class ExecutionContext implements IExecutionContext {
   }
 
   snapshot(): Record<string, unknown> {
-    return { ...this.vars };
+    return structuredClone(this.vars);
   }
 
   static fromJSON(
