@@ -1,7 +1,6 @@
 # pipewright
 
 [![CI](https://github.com/onblueroses/pipewright/actions/workflows/ci.yml/badge.svg)](https://github.com/onblueroses/pipewright/actions/workflows/ci.yml)
-[![npm](https://img.shields.io/npm/v/pipewright)](https://www.npmjs.com/package/pipewright)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 Lightweight TypeScript workflow engine with typed nodes, context interpolation, and human-in-the-loop approval gates.
@@ -32,12 +31,6 @@ Most workflow engines are either too heavy (Temporal, Inngest) or too simple (ju
 ```
 
 The runner walks the graph one node at a time, following `nextNode` pointers. Conditional nodes enable branching (one step, two possible paths), but execution is sequential - there is no parallel fan-out. This keeps the engine simple and deterministic.
-
-## Install
-
-```bash
-npm install pipewright
-```
 
 ## Quick Example
 
