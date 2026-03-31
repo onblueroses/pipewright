@@ -61,9 +61,10 @@ export async function runWorkflow(
   let context: ExecutionContext;
   let options: WorkflowOptions | undefined;
 
-  if ('_prepared' in stepsOrPrepared && stepsOrPrepared._prepared) {
-    steps = stepsOrPrepared.steps;
-    registry = stepsOrPrepared.registry;
+  if ('_prepared' in stepsOrPrepared && (stepsOrPrepared as PreparedWorkflow)._prepared) {
+    const prepared = stepsOrPrepared as PreparedWorkflow;
+    steps = prepared.steps;
+    registry = prepared.registry;
     context = registryOrContext as ExecutionContext;
     options = contextOrOptions as WorkflowOptions | undefined;
   } else {
