@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { createRegistry } from '../../src/core/registry.js';
 import { createExecutionContext } from '../../src/core/context.js';
 import { defineNode } from '../../src/core/node.js';
-import { runWorkflow, resumeWorkflow } from '../../src/core/workflow.js';
+import { runWorkflow, resumeWorkflow, prepareWorkflow, PrepareError } from '../../src/core/workflow.js';
 import type { StepEvent } from '../../src/core/types.js';
 
 const makeNode = (type: string, output: unknown, nextNode?: string) =>
@@ -478,6 +478,180 @@ describe('resumeWorkflow', () => {
     const resumed = await resumeWorkflow(paused, steps, registry, ctx);
     expect(resumed.success).toBe(true);
     expect(resumed.steps).toHaveLength(1);
+  });
+});
+
+describe('prepareWorkflow', () => {
+  it('returns PreparedWorkflow for valid steps and registry', () => {
+    const registry = createRegistry();
+    registry.register(makeNode('step_a', { a: 1 }, 'b'));
+    registry.register(makeNode('step_b', { b: 2 }));
+
+    const steps = {
+      a: { nodeType: 'step_a', input: {} },
+      b: { nodeType: 'step_b', input: {} },
+    };
+
+    const prepared = prepareWorkflow(steps, registry);
+    expect(prepared._prepared).toBe(true);
+    expect(prepared.steps).toBe(steps);
+    expect(prepared.registry).toBe(registry);
+  });
+
+  it('throws PrepareError for unregistered node types', () => {
+    const registry = createRegistry();
+    registry.register(makeNode('step_a', {}));
+
+    const steps = {
+      a: { nodeType: 'step_a', input: {} },
+      b: { nodeType: 'missing_node', input: {} },
+    };
+
+    expect(() => prepareWorkflow(steps, registry)).toThrow(PrepareError);
+    try {
+      prepareWorkflow(steps, registry);
+    } catch (err) {
+      const e = err as PrepareError;
+      expect(e.errors).toHaveLength(1);
+      expect(e.errors[0].stepId).toBe('b');
+      expect(e.errors[0].issue).toContain('missing_node');
+    }
+  });
+
+  it('collects all errors when multiple node types are missing', () => {
+    const registry = createRegistry();
+
+    const steps = {
+      a: { nodeType: 'missing_a', input: {} },
+      b: { nodeType: 'missing_b', input: {} },
+    };
+
+    try {
+      prepareWorkflow(steps, registry);
+    } catch (err) {
+      const e = err as PrepareError;
+      expect(e.errors).toHaveLength(2);
+    }
+  });
+});
+
+describe('runWorkflow with PreparedWorkflow', () => {
+  it('runs a workflow from a prepared handle', async () => {
+    const registry = createRegistry();
+    registry.register(makeNode('step_a', { a: 1 }, 'b'));
+    registry.register(makeNode('step_b', { b: 2 }));
+    const ctx = createExecutionContext();
+
+    const prepared = prepareWorkflow(
+      {
+        a: { nodeType: 'step_a', input: {} },
+        b: { nodeType: 'step_b', input: {} },
+      },
+      registry,
+    );
+
+    const result = await runWorkflow(prepared, 'a', ctx);
+
+    expect(result.success).toBe(true);
+    expect(result.steps).toHaveLength(2);
+    expect(result.steps.map(s => s.nodeType)).toEqual(['step_a', 'step_b']);
+  });
+
+  it('supports options with prepared workflow', async () => {
+    const registry = createRegistry();
+    registry.register(makeNode('step_a', { a: 1 }));
+    const ctx = createExecutionContext();
+    const events: StepEvent[] = [];
+
+    const prepared = prepareWorkflow(
+      { a: { nodeType: 'step_a', input: {} } },
+      registry,
+    );
+
+    await runWorkflow(prepared, 'a', ctx, {
+      onStep: (e) => events.push(e),
+    });
+
+    expect(events).toHaveLength(1);
+    expect(events[0].nodeType).toBe('step_a');
+  });
+});
+
+describe('resumeWorkflow with cursor', () => {
+  it('paused result includes cursor with nextNode', async () => {
+    const registry = createRegistry();
+    const approvalNode = defineNode({
+      type: 'needs_review',
+      name: 'needs_review',
+      category: 'action',
+      inputSchema: z.object({}).passthrough(),
+      outputSchema: z.object({ pending: z.boolean() }),
+      executor: async () => ({
+        success: true,
+        output: { pending: true },
+        approvalRequired: true,
+        nextNode: 'after',
+      }),
+    });
+    registry.register(approvalNode);
+    registry.register(makeNode('after_review', { done: true }));
+    const ctx = createExecutionContext();
+
+    const steps = {
+      review: { nodeType: 'needs_review', input: {} },
+      after: { nodeType: 'after_review', input: {} },
+    };
+
+    const paused = await runWorkflow(steps, 'review', registry, ctx);
+    expect(paused.cursor).toBeDefined();
+    expect(paused.cursor!.currentStepId).toBe('after');
+  });
+
+  it('paused result has no cursor when no nextNode', async () => {
+    const registry = createRegistry();
+    const terminalApproval = defineNode({
+      type: 'final_review',
+      name: 'final_review',
+      category: 'action',
+      inputSchema: z.object({}).passthrough(),
+      outputSchema: z.object({ pending: z.boolean() }),
+      executor: async () => ({
+        success: true,
+        output: { pending: true },
+        approvalRequired: true,
+      }),
+    });
+    registry.register(terminalApproval);
+    const ctx = createExecutionContext();
+
+    const paused = await runWorkflow(
+      { review: { nodeType: 'final_review', input: {} } },
+      'review',
+      registry,
+      ctx,
+    );
+    expect(paused.cursor).toBeUndefined();
+  });
+
+  it('resumes from cursor', async () => {
+    const registry = createRegistry();
+    registry.register(makeNode('step_a', { a: 1 }, 'b'));
+    registry.register(makeNode('step_b', { b: 2 }));
+    const ctx = createExecutionContext();
+
+    const result = await resumeWorkflow(
+      { currentStepId: 'b' },
+      {
+        a: { nodeType: 'step_a', input: {} },
+        b: { nodeType: 'step_b', input: {} },
+      },
+      registry,
+      ctx,
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.steps).toHaveLength(1);
+    expect(result.steps[0].nodeType).toBe('step_b');
   });
 });
 

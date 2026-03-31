@@ -1,7 +1,7 @@
 export { defineNode } from './core/node.js';
 export { NodeRegistry, createRegistry } from './core/registry.js';
 export { ExecutionContext, createExecutionContext } from './core/context.js';
-export { runWorkflow, resumeWorkflow } from './core/workflow.js';
+export { runWorkflow, resumeWorkflow, prepareWorkflow, PrepareError } from './core/workflow.js';
 export { CostTracker, createCostTracker, wrapLLMService, BudgetExceededError } from './core/cost.js';
 export type {
   NodeDefinition,
@@ -14,6 +14,9 @@ export type {
   WorkflowStep,
   WorkflowResult,
   StepEvent,
+  PreparedWorkflow,
+  WorkflowCursor,
+  PreparationError,
 } from './core/types.js';
 export type { WorkflowOptions } from './core/workflow.js';
 export type {

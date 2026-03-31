@@ -56,6 +56,7 @@ export interface WorkflowResult {
   steps: Array<{ stepId: string; nodeType: string; result: NodeResult }>;
   success: boolean;
   pausedAt?: string;
+  cursor?: WorkflowCursor;
   error?: string;
   cost?: CostReport;
 }
@@ -66,4 +67,19 @@ export interface StepEvent {
   result: NodeResult;
   durationMs: number;
   cost?: StepCostReport;
+}
+
+export interface PreparedWorkflow {
+  readonly _prepared: true;
+  readonly steps: Record<string, WorkflowStep>;
+  readonly registry: import('./registry.js').NodeRegistry;
+}
+
+export interface WorkflowCursor {
+  readonly currentStepId: string;
+}
+
+export interface PreparationError {
+  stepId: string;
+  issue: string;
 }

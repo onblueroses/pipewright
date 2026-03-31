@@ -1,4 +1,4 @@
-import type { WorkflowStep, WorkflowResult, NodeResult, StepEvent } from './types.js';
+import type { WorkflowStep, WorkflowResult, NodeResult, StepEvent, PreparedWorkflow, WorkflowCursor, PreparationError } from './types.js';
 import type { NodeRegistry } from './registry.js';
 import type { ExecutionContext } from './context.js';
 import type { CostTracker } from './cost.js';
@@ -13,23 +13,95 @@ export interface WorkflowOptions {
   costTracker?: CostTracker;
 }
 
+export function prepareWorkflow(
+  steps: Record<string, WorkflowStep>,
+  registry: NodeRegistry,
+): PreparedWorkflow {
+  const errors: PreparationError[] = [];
+  for (const [stepId, step] of Object.entries(steps)) {
+    if (!registry.has(step.nodeType)) {
+      errors.push({ stepId, issue: `Node type "${step.nodeType}" is not registered` });
+    }
+  }
+  if (errors.length > 0) {
+    throw new PrepareError(errors);
+  }
+  return { _prepared: true, steps, registry };
+}
+
+export class PrepareError extends Error {
+  constructor(public readonly errors: PreparationError[]) {
+    super(`Workflow preparation failed: ${errors.map(e => `${e.stepId}: ${e.issue}`).join(', ')}`);
+    this.name = 'PrepareError';
+  }
+}
+
+export async function runWorkflow(
+  prepared: PreparedWorkflow,
+  startNode: string,
+  context: ExecutionContext,
+  options?: WorkflowOptions,
+): Promise<WorkflowResult>;
 export async function runWorkflow(
   steps: Record<string, WorkflowStep>,
   startNode: string,
   registry: NodeRegistry,
   context: ExecutionContext,
-  options?: WorkflowOptions
+  options?: WorkflowOptions,
+): Promise<WorkflowResult>;
+export async function runWorkflow(
+  stepsOrPrepared: Record<string, WorkflowStep> | PreparedWorkflow,
+  startNode: string,
+  registryOrContext: NodeRegistry | ExecutionContext,
+  contextOrOptions?: ExecutionContext | WorkflowOptions,
+  maybeOptions?: WorkflowOptions,
 ): Promise<WorkflowResult> {
+  let steps: Record<string, WorkflowStep>;
+  let registry: NodeRegistry;
+  let context: ExecutionContext;
+  let options: WorkflowOptions | undefined;
+
+  if ('_prepared' in stepsOrPrepared && stepsOrPrepared._prepared) {
+    steps = stepsOrPrepared.steps;
+    registry = stepsOrPrepared.registry;
+    context = registryOrContext as ExecutionContext;
+    options = contextOrOptions as WorkflowOptions | undefined;
+  } else {
+    steps = stepsOrPrepared as Record<string, WorkflowStep>;
+    registry = registryOrContext as NodeRegistry;
+    context = contextOrOptions as ExecutionContext;
+    options = maybeOptions;
+  }
+
   return executeFromNode(steps, startNode, registry, context, [], options);
 }
 
+export async function resumeWorkflow(
+  cursor: WorkflowCursor,
+  steps: Record<string, WorkflowStep>,
+  registry: NodeRegistry,
+  context: ExecutionContext,
+  options?: WorkflowOptions,
+): Promise<WorkflowResult>;
 export async function resumeWorkflow(
   pausedResult: WorkflowResult,
   steps: Record<string, WorkflowStep>,
   registry: NodeRegistry,
   context: ExecutionContext,
-  options?: WorkflowOptions
+  options?: WorkflowOptions,
+): Promise<WorkflowResult>;
+export async function resumeWorkflow(
+  resultOrCursor: WorkflowResult | WorkflowCursor,
+  steps: Record<string, WorkflowStep>,
+  registry: NodeRegistry,
+  context: ExecutionContext,
+  options?: WorkflowOptions,
 ): Promise<WorkflowResult> {
+  if ('currentStepId' in resultOrCursor) {
+    return executeFromNode(steps, resultOrCursor.currentStepId, registry, context, [], options);
+  }
+
+  const pausedResult = resultOrCursor;
   if (!pausedResult.pausedAt) {
     return {
       steps: [],
@@ -168,6 +240,7 @@ async function executeFromNode(
         steps: executedSteps,
         success: true,
         pausedAt: currentId,
+        cursor: result.nextNode ? { currentStepId: result.nextNode } : undefined,
       });
     }
 
