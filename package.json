@@ -5,6 +5,7 @@
   "keywords": ["workflow", "dag", "pipeline", "typescript", "zod", "orchestration"],
   "repository": { "type": "git", "url": "https://github.com/onblueroses/pipewright" },
   "homepage": "https://github.com/onblueroses/pipewright",
+  "bugs": { "url": "https://github.com/onblueroses/pipewright/issues" },
   "license": "MIT",
   "engines": { "node": ">=18" },
   "type": "module",
@@ -16,6 +17,7 @@
   "files": ["dist"],
   "scripts": {
     "build": "tsc",
+    "pack:check": "npm pack --dry-run",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
