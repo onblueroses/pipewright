@@ -1,47 +1,83 @@
-export { defineNode } from './core/node.js';
-export { NodeRegistry, createRegistry } from './core/registry.js';
-export { ExecutionContext, createExecutionContext } from './core/context.js';
-export { runWorkflow, resumeWorkflow, prepareWorkflow, PrepareError } from './core/workflow.js';
-export { CostTracker, createCostTracker, wrapLLMService, BudgetExceededError } from './core/cost.js';
+export type { NodeExecutionConfig } from "./core/config.js";
+export { resolveNodeConfig } from "./core/config.js";
+export { createExecutionContext, ExecutionContext } from "./core/context.js";
 export type {
-  NodeDefinition,
-  NodeResult,
-  NodeExecutor,
-  NodeCategory,
-  NodeCapabilities,
-  NodeMetadata,
-  NodeServices,
-  WorkflowStep,
-  WorkflowResult,
-  StepEvent,
-  PreparedWorkflow,
-  WorkflowCursor,
-  PreparationError,
-} from './core/types.js';
-export type { WorkflowOptions } from './core/workflow.js';
+	BudgetConfig,
+	CostReport,
+	CostTrackerOptions,
+	ModelPricing,
+	PricingTable,
+	StepCostReport,
+	TokenUsage,
+	WrapLLMServiceOptions,
+} from "./core/cost.js";
+export {
+	BudgetExceededError,
+	CostTracker,
+	createCostTracker,
+	wrapLLMService,
+} from "./core/cost.js";
+export { defineNode } from "./core/node.js";
+export { createRegistry, NodeRegistry } from "./core/registry.js";
+export type { CacheStore, RateLimitStore } from "./core/stores.js";
+export {
+	createMemoryCacheStore,
+	createMemoryRateLimitStore,
+} from "./core/stores.js";
 export type {
-  CostTrackerOptions,
-  CostReport,
-  StepCostReport,
-  TokenUsage,
-  ModelPricing,
-  PricingTable,
-  BudgetConfig,
-  WrapLLMServiceOptions,
-} from './core/cost.js';
+	NodeCapabilities,
+	NodeCategory,
+	NodeDefinition,
+	NodeExecutor,
+	NodeMetadata,
+	NodeResult,
+	NodeServices,
+	PreparationError,
+	PreparedWorkflow,
+	StepEvent,
+	WorkflowCursor,
+	WorkflowResult,
+	WorkflowStep,
+} from "./core/types.js";
+export type { WorkflowOptions } from "./core/workflow.js";
+export {
+	PrepareError,
+	prepareWorkflow,
+	resumeWorkflow,
+	runWorkflow,
+} from "./core/workflow.js";
+export type { ConditionType } from "./nodes/shared/evaluate.js";
+export { CONDITION_TYPES, evaluate } from "./nodes/shared/evaluate.js";
 
-export { evaluate, CONDITION_TYPES } from './nodes/shared/evaluate.js';
-export type { ConditionType } from './nodes/shared/evaluate.js';
+import { approvalGateNode } from "./nodes/logic/approval-gate.js";
+import { conditionalNode } from "./nodes/logic/conditional.js";
+import { delayNode } from "./nodes/logic/delay.js";
+import { endNode } from "./nodes/logic/end.js";
+import { testGateNode } from "./nodes/logic/test-gate.js";
+import { filterNode } from "./nodes/transform/filter.js";
+import { mapNode } from "./nodes/transform/map.js";
 
-import { conditionalNode } from './nodes/logic/conditional.js';
-import { delayNode } from './nodes/logic/delay.js';
-import { endNode } from './nodes/logic/end.js';
-import { mapNode } from './nodes/transform/map.js';
-import { filterNode } from './nodes/transform/filter.js';
-import { approvalGateNode } from './nodes/logic/approval-gate.js';
-import { testGateNode } from './nodes/logic/test-gate.js';
+export type {
+	ExecOptions,
+	ExecResult,
+	ExecService,
+} from "./nodes/logic/test-gate.js";
+export {
+	approvalGateNode,
+	conditionalNode,
+	delayNode,
+	endNode,
+	filterNode,
+	mapNode,
+	testGateNode,
+};
 
-export { conditionalNode, delayNode, endNode, mapNode, filterNode, approvalGateNode, testGateNode };
-export type { ExecResult, ExecOptions, ExecService } from './nodes/logic/test-gate.js';
-
-export const builtInNodes = [conditionalNode, delayNode, endNode, mapNode, filterNode, approvalGateNode, testGateNode] as const;
+export const builtInNodes = [
+	conditionalNode,
+	delayNode,
+	endNode,
+	mapNode,
+	filterNode,
+	approvalGateNode,
+	testGateNode,
+] as const;
