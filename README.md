@@ -9,7 +9,7 @@ Most workflow engines are either too heavy (Temporal, Inngest) or too simple (ju
 
 ## Install
 
-Not published to npm yet. Clone and build:
+Clone-only. The unscoped npm name `pipewright` belongs to an unrelated CI/CD scaffolding package, so `npm install pipewright` gets you someone else's project.
 
 ```bash
 git clone https://github.com/onblueroses/pipewright.git
@@ -19,7 +19,7 @@ npm run build
 npm test
 ```
 
-The examples below import from `pipewright`; against a local checkout, import from `./dist` instead.
+The examples below import from `pipewright`, which resolves from the built checkout through the package's self-reference. To import the build directly, use `./dist/index.js`; `./dist` alone fails with `ERR_UNSUPPORTED_DIR_IMPORT`.
 
 ## Architecture
 
