@@ -1,8 +1,8 @@
 {
   "name": "pipewright",
   "version": "0.1.0",
-  "description": "Lightweight TypeScript DAG workflow engine with typed nodes and human-in-the-loop approval gates",
-  "keywords": ["workflow", "dag", "pipeline", "typescript", "zod", "orchestration"],
+  "description": "Lightweight TypeScript workflow engine with typed nodes, sequential execution, and human-in-the-loop approval gates",
+  "keywords": ["workflow", "pipeline", "typescript", "zod", "orchestration"],
   "repository": { "type": "git", "url": "https://github.com/onblueroses/pipewright" },
   "homepage": "https://github.com/onblueroses/pipewright",
   "bugs": { "url": "https://github.com/onblueroses/pipewright/issues" },
