@@ -2,19 +2,37 @@
   "name": "pipewright",
   "version": "0.1.0",
   "description": "Lightweight TypeScript workflow engine with typed nodes, sequential execution, and human-in-the-loop approval gates",
-  "keywords": ["workflow", "pipeline", "typescript", "zod", "orchestration"],
-  "repository": { "type": "git", "url": "https://github.com/onblueroses/pipewright" },
+  "keywords": [
+    "workflow",
+    "pipeline",
+    "typescript",
+    "zod",
+    "orchestration"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/onblueroses/pipewright"
+  },
   "homepage": "https://github.com/onblueroses/pipewright",
-  "bugs": { "url": "https://github.com/onblueroses/pipewright/issues" },
+  "bugs": {
+    "url": "https://github.com/onblueroses/pipewright/issues"
+  },
   "license": "MIT",
-  "engines": { "node": ">=18" },
+  "engines": {
+    "node": ">=18"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
-    ".": { "import": "./dist/index.js", "types": "./dist/index.d.ts" }
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc",
     "pack:check": "npm pack --dry-run",
@@ -28,7 +46,7 @@
   },
   "devDependencies": {
     "typescript": "^5.4.0",
-    "vitest": "^1.6.0",
+    "vitest": "^4.1.10",
     "@types/node": "^20.0.0"
   }
 }
