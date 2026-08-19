@@ -10,11 +10,23 @@ jobs:
   test:
     runs-on: ubuntu-latest
     strategy:
+      # Report every Node line, rather than cancelling siblings on first failure.
+      fail-fast: false
       matrix:
-        node-version: [18, 20, 22]
+        # Node lines under upstream support on 2026-08-19 (nodejs/Release
+        # schedule): 22 maintenance LTS to 2027-04-30, 24 active LTS to
+        # 2028-04-30, 26 current to 2029-04-30. 18 went EOL 2025-04-30 and 20
+        # on 2026-04-30, so both are dropped.
+        #
+        # This floor is the DEV toolchain's, not the library's. vitest 4 loads
+        # rolldown, which statically imports `styleText` from `node:util`
+        # (Node >=20.12.0), and vite/rolldown declare `^20.19.0 || >=22.12.0`.
+        # The published package is far more permissive: see `engines` in
+        # package.json (dist/ uses no Node builtins; structuredClone needs >=17).
+        node-version: [22, 24, 26]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node-version }}
           cache: npm
