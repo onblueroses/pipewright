@@ -1,23 +1,26 @@
-import { describe, it, expect } from 'vitest';
-import { approvalGateNode } from '../../src/nodes/logic/approval-gate.js';
-import { NodeRegistry } from '../../src/core/registry.js';
-import { ExecutionContext } from '../../src/core/context.js';
+import { describe, expect, it } from "vitest";
+import { ExecutionContext } from "../../src/core/context.js";
+import { NodeRegistry } from "../../src/core/registry.js";
+import { approvalGateNode } from "../../src/nodes/logic/approval-gate.js";
 
-describe('approval-gate node', () => {
-  it('returns approvalRequired: true with message', async () => {
-    const registry = new NodeRegistry();
-    registry.register(approvalGateNode);
-    const ctx = new ExecutionContext();
+describe("approval-gate node", () => {
+	it("returns approvalRequired: true with message", async () => {
+		const registry = new NodeRegistry();
+		registry.register(approvalGateNode);
+		const ctx = new ExecutionContext();
 
-    const result = await registry.execute('approval-gate', {
-      message: 'Review this draft',
-      nextNode: 'publish',
-    }, ctx);
+		const result = await registry.execute(
+			"approval-gate",
+			{
+				message: "Review this draft",
+				nextNode: "publish",
+			},
+			ctx,
+		);
 
-    expect(result.success).toBe(true);
-    expect(result.approvalRequired).toBe(true);
-    expect(result.nextNode).toBe('publish');
-    expect(result.output).toEqual({ message: 'Review this draft' });
-  });
-
+		expect(result.success).toBe(true);
+		expect(result.approvalRequired).toBe(true);
+		expect(result.nextNode).toBe("publish");
+		expect(result.output).toEqual({ message: "Review this draft" });
+	});
 });

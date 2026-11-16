@@ -20,32 +20,43 @@ Conditional nodes make branches, but execution is sequential. There is no parall
 ## Example
 
 ```ts
-import { z } from 'zod';
-import { defineNode, createRegistry, createExecutionContext, runWorkflow, builtInNodes } from 'pipewright';
+import { z } from "zod";
+import {
+	defineNode,
+	createRegistry,
+	createExecutionContext,
+	runWorkflow,
+	builtInNodes,
+} from "pipewright";
 
 const greetNode = defineNode({
-  type: 'greet',
-  name: 'Greet',
-  category: 'action',
-  inputSchema: z.object({ name: z.string() }),
-  outputSchema: z.object({ message: z.string() }),
-  executor: async (input) => ({
-    success: true,
-    output: { message: `Hello, ${input.name}!` },
-    nextNode: 'done',
-  }),
+	type: "greet",
+	name: "Greet",
+	category: "action",
+	inputSchema: z.object({ name: z.string() }),
+	outputSchema: z.object({ message: z.string() }),
+	executor: async (input) => ({
+		success: true,
+		output: { message: `Hello, ${input.name}!` },
+		nextNode: "done",
+	}),
 });
 
 const registry = createRegistry();
 registry.registerAll(builtInNodes);
 registry.register(greetNode);
 
-const ctx = createExecutionContext({}, { config: { userName: 'World' } });
+const ctx = createExecutionContext({}, { config: { userName: "World" } });
 
-const result = await runWorkflow({
-  start: { nodeType: 'greet', input: { name: '{{config.userName}}' } },
-  done: { nodeType: 'end', input: { message: '{{start.message}}' } },
-}, 'start', registry, ctx);
+const result = await runWorkflow(
+	{
+		start: { nodeType: "greet", input: { name: "{{config.userName}}" } },
+		done: { nodeType: "end", input: { message: "{{start.message}}" } },
+	},
+	"start",
+	registry,
+	ctx,
+);
 
 console.log(result.steps[1].result.output);
 // { message: 'Hello, World!', terminatedAt: '2026-...' }
@@ -53,15 +64,15 @@ console.log(result.steps[1].result.output);
 
 ## Built-in nodes
 
-| Node | Category | Description |
-|------|----------|-------------|
-| `conditional` | logic | Branch on a condition on a context variable (equals, greater_than, contains, exists, and negations) |
-| `delay` | logic | Wait N milliseconds before it continues |
-| `end` | logic | Stop the workflow |
-| `approval-gate` | logic | Pause for human approval before it continues |
-| `map` | transform | Map array items through an object template with `{{item.field}}` |
-| `test-gate` | logic | Run a command through an injected ExecService and branch on the exit code (0 = pass, other = fail) |
-| `filter` | transform | Filter an array with a condition on each item |
+| Node            | Category  | Description                                                                                         |
+| --------------- | --------- | --------------------------------------------------------------------------------------------------- |
+| `conditional`   | logic     | Branch on a condition on a context variable (equals, greater_than, contains, exists, and negations) |
+| `delay`         | logic     | Wait N milliseconds before it continues                                                             |
+| `end`           | logic     | Stop the workflow                                                                                   |
+| `approval-gate` | logic     | Pause for human approval before it continues                                                        |
+| `map`           | transform | Map array items through an object template with `{{item.field}}`                                    |
+| `test-gate`     | logic     | Run a command through an injected ExecService and branch on the exit code (0 = pass, other = fail)  |
+| `filter`        | transform | Filter an array with a condition on each item                                                       |
 
 Architecture, interpolation rules, approval gates, step events and design decisions:
 [pipewright in detail](docs/details.md).

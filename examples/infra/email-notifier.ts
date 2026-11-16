@@ -1,48 +1,51 @@
-import nodemailer from 'nodemailer';
-import type { Transporter } from 'nodemailer';
-import type { EmailNotifierService } from './types.js';
+import type { Transporter } from "nodemailer";
+import nodemailer from "nodemailer";
+import type { EmailNotifierService } from "./types.js";
 
 export interface EmailNotifierConfig {
-  smtpHost: string;
-  smtpPort: number;
-  smtpUser: string;
-  smtpPass: string;
-  fromAddress: string;
-  toAddress: string;
-  approvalBaseUrl: string;
+	smtpHost: string;
+	smtpPort: number;
+	smtpUser: string;
+	smtpPass: string;
+	fromAddress: string;
+	toAddress: string;
+	approvalBaseUrl: string;
 }
 
 export class EmailNotifier implements EmailNotifierService {
-  private transporter: Transporter;
-  private config: EmailNotifierConfig;
+	private transporter: Transporter;
+	private config: EmailNotifierConfig;
 
-  constructor(config: EmailNotifierConfig, transporter?: Transporter) {
-    this.config = config;
-    this.transporter = transporter ?? nodemailer.createTransport({
-      host: config.smtpHost,
-      port: config.smtpPort,
-      secure: config.smtpPort === 465,
-      auth: {
-        user: config.smtpUser,
-        pass: config.smtpPass,
-      },
-    });
-  }
+	constructor(config: EmailNotifierConfig, transporter?: Transporter) {
+		this.config = config;
+		this.transporter =
+			transporter ??
+			nodemailer.createTransport({
+				host: config.smtpHost,
+				port: config.smtpPort,
+				secure: config.smtpPort === 465,
+				auth: {
+					user: config.smtpUser,
+					pass: config.smtpPass,
+				},
+			});
+	}
 
-  async sendApproval(params: {
-    workflowId: string;
-    message: string;
-    metadata?: Record<string, unknown>;
-  }): Promise<void> {
-    const { workflowId, message, metadata } = params;
-    const approveUrl = `${this.config.approvalBaseUrl}/approve/${workflowId}`;
-    const rejectUrl = `${this.config.approvalBaseUrl}/reject/${workflowId}`;
+	async sendApproval(params: {
+		workflowId: string;
+		message: string;
+		metadata?: Record<string, unknown>;
+	}): Promise<void> {
+		const { workflowId, message, metadata } = params;
+		const approveUrl = `${this.config.approvalBaseUrl}/approve/${workflowId}`;
+		const rejectUrl = `${this.config.approvalBaseUrl}/reject/${workflowId}`;
 
-    const metadataHtml = metadata && Object.keys(metadata).length > 0
-      ? `<h3>Metadata</h3><pre>${escapeHtml(JSON.stringify(metadata, null, 2))}</pre>`
-      : '';
+		const metadataHtml =
+			metadata && Object.keys(metadata).length > 0
+				? `<h3>Metadata</h3><pre>${escapeHtml(JSON.stringify(metadata, null, 2))}</pre>`
+				: "";
 
-    const html = `
+		const html = `
       <h2>Workflow Approval Required</h2>
       <p><strong>Workflow ID:</strong> ${escapeHtml(workflowId)}</p>
       <h3>Draft</h3>
@@ -55,19 +58,19 @@ export class EmailNotifier implements EmailNotifierService {
       </p>
     `.trim();
 
-    await this.transporter.sendMail({
-      from: this.config.fromAddress,
-      to: this.config.toAddress,
-      subject: `Approval Required: ${workflowId}`,
-      html,
-    });
-  }
+		await this.transporter.sendMail({
+			from: this.config.fromAddress,
+			to: this.config.toAddress,
+			subject: `Approval Required: ${workflowId}`,
+			html,
+		});
+	}
 }
 
 function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+	return str
+		.replace(/&/g, "&amp;")
+		.replace(/</g, "&lt;")
+		.replace(/>/g, "&gt;")
+		.replace(/"/g, "&quot;");
 }

@@ -51,21 +51,27 @@ Refer to it with `{{stepId.field}}`:
 
 ```ts
 const steps = {
-  fetch:   { nodeType: 'http-get', input: { url: '{{config.apiUrl}}' } },
-  process: { nodeType: 'transform', input: { data: '{{fetch.body}}' } },
-  //                                               ^^^^^ step ID, not node type
+	fetch: { nodeType: "http-get", input: { url: "{{config.apiUrl}}" } },
+	process: { nodeType: "transform", input: { data: "{{fetch.body}}" } },
+	//                                               ^^^^^ step ID, not node type
 };
 ```
 
 ```ts
 // Single-var: returns the actual value (array, object, number)
-{ data: '{{fetch.items}}' }     // -> { data: [{ id: 1 }, { id: 2 }] }
+{
+	data: "{{fetch.items}}";
+} // -> { data: [{ id: 1 }, { id: 2 }] }
 
 // Multi-var: returns a formatted string
-{ label: '{{fetch.count}} items from {{config.source}}' }
+{
+	label: "{{fetch.count}} items from {{config.source}}";
+}
 
 // Dot-notation + array index
-{ first: '{{fetch.items[0].name}}' }
+{
+	first: "{{fetch.items[0].name}}";
+}
 ```
 
 The engine leaves unknown paths as they are. A template with a single variable keeps the original type and does
@@ -76,12 +82,12 @@ not change it to a string. This is how arrays and objects move between nodes.
 The `approval-gate` node pauses the workflow for human review. Use `resumeWorkflow` to continue after approval:
 
 ```ts
-const result = await runWorkflow(steps, 'start', registry, ctx);
+const result = await runWorkflow(steps, "start", registry, ctx);
 
 if (result.pausedAt) {
-  // Persist result + context.snapshot() to your database
-  // Later, after human approves:
-  const resumed = await resumeWorkflow(result, steps, registry, ctx);
+	// Persist result + context.snapshot() to your database
+	// Later, after human approves:
+	const resumed = await resumeWorkflow(result, steps, registry, ctx);
 }
 ```
 
@@ -93,15 +99,15 @@ The context stays the same across pause and resume. Later nodes can still interp
 Use the `onStep` callback to monitor execution. The callback can be sync or async:
 
 ```ts
-const result = await runWorkflow(steps, 'start', registry, ctx, {
-  onStep: async (event) => {
-    await db.insert('step_log', {
-      stepId: event.stepId,
-      nodeType: event.nodeType,
-      success: event.result.success,
-      durationMs: event.durationMs,
-    });
-  },
+const result = await runWorkflow(steps, "start", registry, ctx, {
+	onStep: async (event) => {
+		await db.insert("step_log", {
+			stepId: event.stepId,
+			nodeType: event.nodeType,
+			success: event.result.success,
+			durationMs: event.durationMs,
+		});
+	},
 });
 ```
 
