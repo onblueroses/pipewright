@@ -78,8 +78,8 @@ const analyzeNode = defineNode({
 	inputSchema: z.object({ topic: z.string() }),
 	outputSchema: z.object({ analysis: z.string() }),
 	executor: async (input, ctx) => {
-		const svc = ctx.services as { llm: typeof llm };
-		const result = await svc.llm.generate(
+		const svc = ctx.services as { meteredLlm: typeof llm };
+		const result = await svc.meteredLlm.generate(
 			`Analyze the following topic for a blog post: ${input.topic}`,
 			"gpt-4",
 		);
@@ -98,9 +98,9 @@ const draftNode = defineNode({
 	inputSchema: z.object({ topic: z.string() }),
 	outputSchema: z.object({ draft: z.string() }),
 	executor: async (input, ctx) => {
-		const svc = ctx.services as { llm: typeof llm };
+		const svc = ctx.services as { meteredLlm: typeof llm };
 		const analysis = ctx.get("analyze.analysis") as string;
-		const result = await svc.llm.generate(
+		const result = await svc.meteredLlm.generate(
 			`Write a blog post about "${input.topic}" based on this analysis: ${analysis}`,
 			"gpt-3.5-turbo",
 		);
@@ -115,7 +115,7 @@ async function main() {
 	registry.register(analyzeNode);
 	registry.register(draftNode);
 
-	const ctx = createExecutionContext({ llm });
+	const ctx = createExecutionContext({ meteredLlm: llm });
 
 	const result = await runWorkflow(
 		{
