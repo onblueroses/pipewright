@@ -1,13 +1,15 @@
 {
 	"name": "pipewright",
 	"version": "0.1.0",
-	"description": "Lightweight TypeScript workflow engine with typed nodes, sequential execution, and human-in-the-loop approval gates",
+	"description": "Small typed workflow engine for TypeScript: sequential and DAG runners, Zod-validated nodes, approval gates, persistence and a node library",
 	"keywords": [
 		"workflow",
+		"dag",
 		"pipeline",
 		"typescript",
 		"zod",
-		"orchestration"
+		"orchestration",
+		"human-in-the-loop"
 	],
 	"repository": {
 		"type": "git",
@@ -26,8 +28,12 @@
 	"types": "./dist/index.d.ts",
 	"exports": {
 		".": {
-			"import": "./dist/index.js",
-			"types": "./dist/index.d.ts"
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		},
+		"./nodes": {
+			"types": "./dist/nodes/index.d.ts",
+			"import": "./dist/nodes/index.js"
 		}
 	},
 	"files": [
@@ -48,8 +54,18 @@
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.6.8",
+		"@types/better-sqlite3": "^9.6.0",
 		"@types/node": "^22.20.5",
+		"better-sqlite3": "^13.2.0",
 		"typescript": "^7.0.2",
 		"vitest": "^5.1.0"
+	},
+	"peerDependencies": {
+		"better-sqlite3": ">=12"
+	},
+	"peerDependenciesMeta": {
+		"better-sqlite3": {
+			"optional": true
+		}
 	}
 }

@@ -50,11 +50,11 @@ export class NodeRegistry {
 	 * result. The returned result carries the parsed output, so schema defaults
 	 * and transforms apply. A successful result without valid output is an error.
 	 */
-	async execute(
+	async execute<TOutput = any>(
 		type: string,
 		rawInput: unknown,
 		context: ExecutionContext,
-	): Promise<NodeResult> {
+	): Promise<NodeResult<TOutput>> {
 		const def = this.defs.get(type);
 		if (!def) throw new Error(`Node type "${type}" is not registered`);
 
@@ -64,13 +64,13 @@ export class NodeRegistry {
 		}
 
 		const result = await def.executor(input.data, context);
-		if (!result.success) return result;
+		if (!result.success) return result as NodeResult<TOutput>;
 
 		const output = def.outputSchema.safeParse(result.output);
 		if (!output.success) {
 			throw new NodeValidationError(type, "output", output.error.issues);
 		}
-		return { ...result, output: output.data };
+		return { ...result, output: output.data as TOutput };
 	}
 
 	getMetadata(type: string): NodeMetadata | undefined {

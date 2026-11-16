@@ -70,16 +70,27 @@ export {
 	runWorkflow,
 	validateWorkflow,
 } from "./core/workflow.js";
+export type {
+	WebhookTriggerInput,
+	WebhookTriggerOutput,
+} from "./nodes/logic/webhook-trigger.js";
 export type { ConditionType } from "./nodes/shared/evaluate.js";
 export { CONDITION_TYPES, evaluate } from "./nodes/shared/evaluate.js";
+export type {
+	SortDirection,
+	SortInput,
+	SortOutput,
+} from "./nodes/transform/sort.js";
 
 import { approvalGateNode } from "./nodes/logic/approval-gate.js";
 import { conditionalNode } from "./nodes/logic/conditional.js";
 import { delayNode } from "./nodes/logic/delay.js";
 import { endNode } from "./nodes/logic/end.js";
 import { testGateNode } from "./nodes/logic/test-gate.js";
+import { webhookTriggerNode } from "./nodes/logic/webhook-trigger.js";
 import { filterNode } from "./nodes/transform/filter.js";
 import { mapNode } from "./nodes/transform/map.js";
+import { sortNode } from "./nodes/transform/sort.js";
 
 export {
 	approvalGateNode,
@@ -88,7 +99,9 @@ export {
 	endNode,
 	filterNode,
 	mapNode,
+	sortNode,
 	testGateNode,
+	webhookTriggerNode,
 };
 
 /** The logic and transform nodes. Register them with `registry.registerAll(builtInNodes)`. */
@@ -98,6 +111,8 @@ export const builtInNodes = [
 	delayNode,
 	endNode,
 	testGateNode,
+	webhookTriggerNode,
 	mapNode,
 	filterNode,
+	sortNode,
 ] as const;

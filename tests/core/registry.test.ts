@@ -126,7 +126,9 @@ describe("NodeRegistry", () => {
 		expect(registry.has("filter")).toBe(true);
 		expect(registry.has("approval-gate")).toBe(true);
 		expect(registry.has("test-gate")).toBe(true);
-		expect(registry.getTypes()).toHaveLength(7);
+		expect(registry.has("sort")).toBe(true);
+		expect(registry.has("webhook-trigger")).toBe(true);
+		expect(registry.getTypes()).toHaveLength(9);
 	});
 
 	it("validates output schema and throws on violation", async () => {
