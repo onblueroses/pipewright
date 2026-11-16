@@ -6,7 +6,11 @@
 		"strict": true,
 		"noEmit": true,
 		"skipLibCheck": true,
-		"types": ["node"]
+		"types": ["node"],
+		"paths": {
+			"pipewright": ["./src/index.ts"],
+			"pipewright/*": ["./src/*/index.ts"]
+		}
 	},
-	"include": ["src", "tests", "vitest.config.ts"]
+	"include": ["src", "tests", "examples", "vitest.config.ts"]
 }

@@ -13,8 +13,8 @@ import {
 	runWorkflow,
 	type WorkflowStep,
 } from "pipewright";
+import { createExecService } from "pipewright/infra";
 import { z } from "zod";
-import { createExecService } from "../infra/exec-service.js";
 
 const MAX_RETRIES = 3;
 
