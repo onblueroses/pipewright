@@ -148,7 +148,11 @@ async function main() {
 	const context = createExecutionContext({ exec }, { _retryCount: 0 });
 
 	console.log("Starting orchestrator pipeline...\n");
-	const result = await runWorkflow(steps, "plan", registry, context);
+	// The loop sets the step bound: plan, then up to MAX_RETRIES rounds of
+	// work, verify, check, fix, then a last work, verify, check and end.
+	const result = await runWorkflow(steps, "plan", registry, context, {
+		maxSteps: 1 + 4 * (MAX_RETRIES + 1),
+	});
 
 	console.log("\n--- Result ---");
 	console.log(`Success: ${result.success}`);

@@ -1,3 +1,5 @@
+import { AsyncLocalStorage } from "node:async_hooks";
+
 export interface ModelPricing {
 	inputPerMillion: number;
 	outputPerMillion: number;
@@ -44,8 +46,8 @@ export interface CostTrackerOptions {
 }
 
 export interface WrapLLMMethodConfig {
-	extractUsage: (result: unknown) => TokenUsage;
-	getModel?: (...args: unknown[]) => string;
+	extractUsage: (result: any) => TokenUsage;
+	getModel?: (...args: any[]) => string;
 }
 
 export interface WrapLLMServiceOptions<T> {
@@ -86,8 +88,9 @@ export class CostTracker {
 	private totalCalls = 0;
 	private softLimitFired = false;
 
-	// Mutable so wrapLLMService proxies can attribute cost without threading stepId through user code.
-	currentStepId: string | undefined;
+	// The runners call each step inside `runInStep`. AsyncLocalStorage keeps the
+	// step ID per async call chain, so concurrent DAG steps do not mix their costs.
+	private readonly step = new AsyncLocalStorage<string>();
 
 	constructor(options: CostTrackerOptions) {
 		this.pricing = options.pricing;
@@ -138,8 +141,8 @@ export class CostTracker {
 		this.totalOutputTokens += usage.outputTokens;
 		this.totalCalls++;
 
-		if (this.currentStepId)
-			this.accumulate(this.stepData, this.currentStepId, usage, callCost);
+		const stepId = this.step.getStore();
+		if (stepId) this.accumulate(this.stepData, stepId, usage, callCost);
 		this.accumulate(this.modelData, usage.model, usage, callCost);
 
 		if (
@@ -150,6 +153,11 @@ export class CostTracker {
 			this.softLimitFired = true;
 			this.budget.onSoftLimit?.(this.report());
 		}
+	}
+
+	/** Run `fn` and attribute every usage it records to `stepId`. */
+	runInStep<T>(stepId: string, fn: () => T): T {
+		return this.step.run(stepId, fn);
 	}
 
 	checkBudget(): void {

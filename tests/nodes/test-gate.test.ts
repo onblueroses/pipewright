@@ -3,8 +3,8 @@ import { z } from "zod";
 import { createExecutionContext } from "../../src/core/context.js";
 import { defineNode } from "../../src/core/node.js";
 import { createRegistry } from "../../src/core/registry.js";
+import type { ExecService } from "../../src/core/types.js";
 import { runWorkflow } from "../../src/core/workflow.js";
-import type { ExecService } from "../../src/nodes/logic/test-gate.js";
 import { testGateNode } from "../../src/nodes/logic/test-gate.js";
 
 const terminalNode = (type: string) =>
@@ -154,14 +154,13 @@ describe("testGateNode", () => {
 	});
 
 	describe("exec throws", () => {
-		it("branches to failNode when exec service throws", async () => {
+		it("fails the run when the exec service throws", async () => {
 			const exec = throwingExec(new Error("spawn ENOENT"));
 			const r = await runGate(exec, { command: "missing-binary" });
-			expect(r.output.passed).toBe(false);
-			expect(r.output.exitCode).toBe(-1);
-			expect(r.output.stderr).toContain("spawn ENOENT");
-			expect(r.reachedBranch).toBe("fail_branch");
-			expect(r.gateSuccess).toBe(true);
+			expect(r.gateSuccess).toBe(false);
+			expect(r.gateError).toContain("spawn ENOENT");
+			expect(r.workflowSuccess).toBe(false);
+			expect(r.reachedBranch).toBeUndefined();
 		});
 	});
 
@@ -318,6 +317,8 @@ describe("testGateNode", () => {
 				"verify",
 				registry,
 				ctx,
+				// A round is verify, check, retry. Five retries, then verify, check, end.
+				{ maxSteps: 3 * 5 + 3 },
 			);
 
 			expect(result.success).toBe(true);

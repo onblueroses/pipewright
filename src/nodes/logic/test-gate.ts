@@ -1,21 +1,6 @@
 import { z } from "zod";
 import { defineNode } from "../../core/node.js";
 
-export interface ExecResult {
-	exitCode: number;
-	stdout: string;
-	stderr: string;
-}
-
-export interface ExecOptions {
-	timeout?: number;
-}
-
-export type ExecService = (
-	command: string,
-	options?: ExecOptions,
-) => Promise<ExecResult>;
-
 const inputSchema = z.object({
 	command: z.string(),
 	passNode: z.string(),
@@ -40,7 +25,7 @@ export const testGateNode = defineNode({
 	inputSchema,
 	outputSchema,
 	executor: async (input, context) => {
-		const exec = context.services.exec as ExecService | undefined;
+		const exec = context.services.exec;
 		if (!exec) {
 			return {
 				success: false,
@@ -66,18 +51,11 @@ export const testGateNode = defineNode({
 				nextNode: passed ? input.passNode : input.failNode,
 			};
 		} catch (err) {
-			const durationMs = Date.now() - start;
+			// The command could not run. That is not a test result, so the run fails.
 			const message = err instanceof Error ? err.message : String(err);
 			return {
-				success: true,
-				output: {
-					passed: false,
-					exitCode: -1,
-					stdout: "",
-					stderr: message,
-					durationMs,
-				},
-				nextNode: input.failNode,
+				success: false,
+				error: `test-gate could not run the command: ${message}`,
 			};
 		}
 	},

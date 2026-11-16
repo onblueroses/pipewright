@@ -51,10 +51,12 @@ describe("CostTracker", () => {
 
 		it("attributes usage to current step", () => {
 			const tracker = createCostTracker({ pricing: PRICING });
-			tracker.currentStepId = "step-a";
-			tracker.recordUsage(usage("gpt-4", 1000, 500));
-			tracker.currentStepId = "step-b";
-			tracker.recordUsage(usage("gpt-4", 2000, 1000));
+			tracker.runInStep("step-a", () => {
+				tracker.recordUsage(usage("gpt-4", 1000, 500));
+			});
+			tracker.runInStep("step-b", () => {
+				tracker.recordUsage(usage("gpt-4", 2000, 1000));
+			});
 
 			const report = tracker.report();
 			expect(report.byStep["step-a"].inputTokens).toBe(1000);
@@ -74,9 +76,10 @@ describe("CostTracker", () => {
 
 		it("accumulates multiple calls within same step", () => {
 			const tracker = createCostTracker({ pricing: PRICING });
-			tracker.currentStepId = "step-a";
-			tracker.recordUsage(usage("gpt-4", 1000, 500));
-			tracker.recordUsage(usage("gpt-4", 2000, 1000));
+			tracker.runInStep("step-a", () => {
+				tracker.recordUsage(usage("gpt-4", 1000, 500));
+				tracker.recordUsage(usage("gpt-4", 2000, 1000));
+			});
 
 			const stepReport = tracker.stepReport("step-a");
 			expect(stepReport?.calls).toBe(2);
@@ -84,7 +87,7 @@ describe("CostTracker", () => {
 			expect(stepReport?.outputTokens).toBe(1500);
 		});
 
-		it("records usage with no currentStepId set", () => {
+		it("records usage outside a step", () => {
 			const tracker = createCostTracker({ pricing: PRICING });
 			tracker.recordUsage(usage("gpt-4", 1000, 500));
 
@@ -140,11 +143,13 @@ describe("CostTracker", () => {
 
 		it("aggregates byStep and byModel correctly", () => {
 			const tracker = createCostTracker({ pricing: PRICING });
-			tracker.currentStepId = "analyze";
-			tracker.recordUsage(usage("gpt-4", 5000, 2000));
-			tracker.recordUsage(usage("gpt-3.5", 10000, 5000));
-			tracker.currentStepId = "draft";
-			tracker.recordUsage(usage("gpt-4", 3000, 1000));
+			tracker.runInStep("analyze", () => {
+				tracker.recordUsage(usage("gpt-4", 5000, 2000));
+				tracker.recordUsage(usage("gpt-3.5", 10000, 5000));
+			});
+			tracker.runInStep("draft", () => {
+				tracker.recordUsage(usage("gpt-4", 3000, 1000));
+			});
 
 			const report = tracker.report();
 			expect(Object.keys(report.byStep)).toHaveLength(2);
@@ -164,8 +169,9 @@ describe("CostTracker", () => {
 
 		it("returns correct step-scoped report", () => {
 			const tracker = createCostTracker({ pricing: PRICING });
-			tracker.currentStepId = "step-x";
-			tracker.recordUsage(usage("gpt-4", 1000, 500));
+			tracker.runInStep("step-x", () => {
+				tracker.recordUsage(usage("gpt-4", 1000, 500));
+			});
 
 			const sr = tracker.stepReport("step-x");
 			expect(sr?.stepId).toBe("step-x");
@@ -476,7 +482,8 @@ describe("workflow integration", () => {
 		);
 
 		expect(result.success).toBe(false);
-		expect(result.error).toContain("Budget exceeded");
+		expect(result.error?.code).toBe("BUDGET_EXCEEDED");
+		expect(result.error?.message).toContain("Budget exceeded");
 		expect(result.cost).toBeDefined();
 		expect(result.cost!.totalCost).toBeGreaterThan(0);
 	});
@@ -509,7 +516,12 @@ describe("workflow integration", () => {
 			"a",
 			registry,
 			ctx,
-			{ costTracker: tracker, onStep: (e) => events.push(e) },
+			{
+				costTracker: tracker,
+				onStep: (e) => {
+					events.push(e);
+				},
+			},
 		);
 
 		expect(events).toHaveLength(1);

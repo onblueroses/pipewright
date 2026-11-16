@@ -27,7 +27,7 @@ plan -> work -> verify (test-gate)
 ## Key design choices
 
 - **Retry is topology, not a node.** The loop emerges from `nextNode` connections, not from a retry primitive. This keeps nodes simple and composable.
-- **Runner's `maxSteps` prevents infinite loops.** Even if the retry limit is misconfigured, the workflow runner stops after 100 steps by default.
+- **`maxSteps` bounds the loop.** A workflow that loops must set it. The example derives it from the loop: plan, then `MAX_RETRIES + 1` rounds of four steps.
 - **Error context flows through the graph.** The fix node reads `verify.stderr` and `verify.exitCode` via context interpolation to understand what went wrong.
 
 ## Running

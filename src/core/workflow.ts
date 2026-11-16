@@ -1,383 +1,239 @@
-import { z } from "zod";
-import type { NodeExecutionConfig } from "./config.js";
-import { resolveNodeConfig } from "./config.js";
-import type { ExecutionContext } from "./context.js";
-import type { CostTracker } from "./cost.js";
-import { BudgetExceededError } from "./cost.js";
+import { randomUUID } from "node:crypto";
+import { ExecutionContext } from "./context.js";
 import type { NodeRegistry } from "./registry.js";
-import type { CacheStore, RateLimitStore } from "./stores.js";
+import type { StepOptions } from "./step.js";
+import { runStep } from "./step.js";
+import type { WorkflowStatus, WorkflowStore } from "./stores.js";
 import type {
-	NodeResult,
-	PreparationError,
-	PreparedWorkflow,
+	ExecutionContext as Context,
+	NodeCredentials,
+	NodeServices,
 	StepEvent,
-	WorkflowCursor,
+	StepRecord,
+	WorkflowError,
 	WorkflowResult,
 	WorkflowStep,
 } from "./types.js";
 
-const DEFAULT_MAX_STEPS = 100;
-
-function simpleHash(str: string): string {
-	let hash = 0;
-	for (let i = 0; i < str.length; i++) {
-		hash = ((hash << 5) - hash + str.charCodeAt(i)) | 0;
-	}
-	return (hash >>> 0).toString(36);
-}
-
-export interface WorkflowOptions {
+export interface WorkflowOptions extends StepOptions {
+	/**
+	 * Stop with MAX_STEPS_EXCEEDED after this many steps, resumed steps included.
+	 * Default: the number of steps in the workflow, so each step can run once.
+	 * A workflow that loops through `nextNode` must set it.
+	 */
 	maxSteps?: number;
+	/** Called after every step, also a failed one. The runner awaits it. */
 	onStep?: (event: StepEvent) => void | Promise<void>;
-	costTracker?: CostTracker;
-	cacheStore?: CacheStore;
-	rateLimitStore?: RateLimitStore;
-	nodeConfig?: Record<string, Partial<NodeExecutionConfig>>;
+	/** Save the run on start, pause, error and completion. */
+	store?: WorkflowStore;
+	/** Run ID for the store. Default: a random UUID. */
+	id?: string;
 }
 
-export function prepareWorkflow(
+/** Return the problems that stop a workflow from running. Empty means valid. */
+export function validateWorkflow(
 	steps: Record<string, WorkflowStep>,
+	startNode: string,
 	registry: NodeRegistry,
-): PreparedWorkflow {
-	const errors: PreparationError[] = [];
+): string[] {
+	const errors: string[] = [];
+	if (!steps[startNode]) {
+		errors.push(`Start step "${startNode}" is not in the workflow`);
+	}
 	for (const [stepId, step] of Object.entries(steps)) {
 		if (!registry.has(step.nodeType)) {
-			errors.push({
-				stepId,
-				issue: `Node type "${step.nodeType}" is not registered`,
-			});
-		}
-	}
-	if (errors.length > 0) {
-		throw new PrepareError(errors);
-	}
-	return { _prepared: true, steps, registry };
-}
-
-export class PrepareError extends Error {
-	constructor(public readonly errors: PreparationError[]) {
-		super(
-			`Workflow preparation failed: ${errors.map((e) => `${e.stepId}: ${e.issue}`).join(", ")}`,
-		);
-		this.name = "PrepareError";
-	}
-}
-
-export async function runWorkflow(
-	prepared: PreparedWorkflow,
-	startNode: string,
-	context: ExecutionContext,
-	options?: WorkflowOptions,
-): Promise<WorkflowResult>;
-export async function runWorkflow(
-	steps: Record<string, WorkflowStep>,
-	startNode: string,
-	registry: NodeRegistry,
-	context: ExecutionContext,
-	options?: WorkflowOptions,
-): Promise<WorkflowResult>;
-export async function runWorkflow(
-	stepsOrPrepared: Record<string, WorkflowStep> | PreparedWorkflow,
-	startNode: string,
-	registryOrContext: NodeRegistry | ExecutionContext,
-	contextOrOptions?: ExecutionContext | WorkflowOptions,
-	maybeOptions?: WorkflowOptions,
-): Promise<WorkflowResult> {
-	let steps: Record<string, WorkflowStep>;
-	let registry: NodeRegistry;
-	let context: ExecutionContext;
-	let options: WorkflowOptions | undefined;
-
-	if (
-		"_prepared" in stepsOrPrepared &&
-		(stepsOrPrepared as PreparedWorkflow)._prepared
-	) {
-		const prepared = stepsOrPrepared as PreparedWorkflow;
-		steps = prepared.steps;
-		registry = prepared.registry;
-		context = registryOrContext as ExecutionContext;
-		options = contextOrOptions as WorkflowOptions | undefined;
-	} else {
-		steps = stepsOrPrepared as Record<string, WorkflowStep>;
-		registry = registryOrContext as NodeRegistry;
-		context = contextOrOptions as ExecutionContext;
-		options = maybeOptions;
-	}
-
-	return executeFromNode(steps, startNode, registry, context, [], options);
-}
-
-export async function resumeWorkflow(
-	cursor: WorkflowCursor,
-	steps: Record<string, WorkflowStep>,
-	registry: NodeRegistry,
-	context: ExecutionContext,
-	options?: WorkflowOptions,
-): Promise<WorkflowResult>;
-export async function resumeWorkflow(
-	pausedResult: WorkflowResult,
-	steps: Record<string, WorkflowStep>,
-	registry: NodeRegistry,
-	context: ExecutionContext,
-	options?: WorkflowOptions,
-): Promise<WorkflowResult>;
-export async function resumeWorkflow(
-	resultOrCursor: WorkflowResult | WorkflowCursor,
-	steps: Record<string, WorkflowStep>,
-	registry: NodeRegistry,
-	context: ExecutionContext,
-	options?: WorkflowOptions,
-): Promise<WorkflowResult> {
-	if ("currentStepId" in resultOrCursor) {
-		return executeFromNode(
-			steps,
-			resultOrCursor.currentStepId,
-			registry,
-			context,
-			[],
-			options,
-		);
-	}
-
-	const pausedResult = resultOrCursor;
-	if (!pausedResult.pausedAt) {
-		return {
-			steps: [],
-			success: false,
-			error: "Cannot resume: workflow was not paused (no pausedAt)",
-		};
-	}
-
-	const lastStep = pausedResult.steps[pausedResult.steps.length - 1];
-	if (!lastStep) {
-		return {
-			steps: [],
-			success: false,
-			error: "Cannot resume: paused result has no executed steps",
-		};
-	}
-
-	const nextNode = lastStep.result.nextNode;
-	if (!nextNode) {
-		return {
-			steps: [...pausedResult.steps],
-			success: true,
-		};
-	}
-
-	return executeFromNode(
-		steps,
-		nextNode,
-		registry,
-		context,
-		[...pausedResult.steps],
-		options,
-	);
-}
-
-async function executeFromNode(
-	steps: Record<string, WorkflowStep>,
-	startNode: string,
-	registry: NodeRegistry,
-	context: ExecutionContext,
-	priorSteps: Array<{ stepId: string; nodeType: string; result: NodeResult }>,
-	options?: WorkflowOptions,
-): Promise<WorkflowResult> {
-	const maxSteps = options?.maxSteps ?? DEFAULT_MAX_STEPS;
-	const onStep = options?.onStep;
-	const costTracker = options?.costTracker;
-	const executedSteps = [...priorSteps];
-	let currentId: string | undefined = startNode;
-	let stepCount = priorSteps.length;
-
-	const withCost = (result: WorkflowResult): WorkflowResult => {
-		if (costTracker) result.cost = costTracker.report();
-		return result;
-	};
-
-	while (currentId !== undefined) {
-		if (stepCount >= maxSteps) {
-			return withCost({
-				steps: executedSteps,
-				success: false,
-				error: `Workflow exceeded maximum of ${maxSteps} steps (possible cycle). Last step: "${currentId}"`,
-			});
-		}
-		stepCount++;
-
-		const step = steps[currentId];
-		if (!step) {
-			return withCost({
-				steps: executedSteps,
-				success: false,
-				error: `Step "${currentId}" not found in workflow`,
-			});
-		}
-
-		const interpolatedInput = context.interpolateObject(step.input);
-
-		let result: NodeResult;
-		const startTime = Date.now();
-		const config = resolveNodeConfig(
-			step.nodeType,
-			currentId,
-			options?.nodeConfig,
-		);
-
-		if (costTracker) {
-			costTracker.currentStepId = currentId;
-		}
-
-		// Check cache before executing
-		const cacheKey =
-			config.cacheKey ??
-			`node:${step.nodeType}:${currentId}:${simpleHash(JSON.stringify(interpolatedInput))}`;
-		if (config.cacheTtlMs && options?.cacheStore) {
-			const cached = await options.cacheStore.get(cacheKey);
-			if (cached !== undefined) {
-				result = cached as NodeResult;
-				executedSteps.push({
-					stepId: currentId,
-					nodeType: step.nodeType,
-					result,
-				});
-				if (result.output !== undefined) {
-					context.setNodeOutput(currentId, result.output);
-				}
-				if (onStep) {
-					await onStep({
-						stepId: currentId,
-						nodeType: step.nodeType,
-						result,
-						durationMs: Date.now() - startTime,
-					});
-				}
-				currentId = result.nextNode;
-				continue;
-			}
-		}
-
-		try {
-			result = await executeWithConfig(
-				registry,
-				step.nodeType,
-				interpolatedInput,
-				context,
-				config,
+			errors.push(
+				`Step "${stepId}": node type "${step.nodeType}" is not registered`,
 			);
-		} catch (err) {
-			if (err instanceof BudgetExceededError) {
-				return withCost({
-					steps: executedSteps,
-					success: false,
-					error: err.message,
-				});
-			}
-			if (err instanceof z.ZodError) {
-				const issues = err.issues
-					.map((i) => `${i.path.join(".")}: ${i.message}`)
-					.join(", ");
-				return withCost({
-					steps: executedSteps,
-					success: false,
-					error: `Node "${step.nodeType}" (step "${currentId}") input validation failed: ${issues}`,
-				});
-			}
-			const error = err instanceof Error ? err.message : String(err);
-			return withCost({
-				steps: executedSteps,
-				success: false,
-				error: `Node "${step.nodeType}" (step "${currentId}") threw: ${error}`,
-			});
 		}
-
-		// Cache successful result if configured
-		if (config.cacheTtlMs && options?.cacheStore && result.success) {
-			await options.cacheStore.set(cacheKey, result, config.cacheTtlMs);
-		}
-
-		executedSteps.push({ stepId: currentId, nodeType: step.nodeType, result });
-
-		if (onStep) {
-			await onStep({
-				stepId: currentId,
-				nodeType: step.nodeType,
-				result,
-				durationMs: Date.now() - startTime,
-				cost: costTracker?.stepReport(currentId),
-			});
-		}
-
-		if (result.output !== undefined) {
-			context.setNodeOutput(currentId, result.output);
-		}
-
-		if (!result.success) {
-			return withCost({
-				steps: executedSteps,
-				success: false,
-				error: result.error ?? `Node "${step.nodeType}" failed`,
-			});
-		}
-
-		if (result.approvalRequired) {
-			return withCost({
-				steps: executedSteps,
-				success: true,
-				pausedAt: currentId,
-				cursor: result.nextNode
-					? { currentStepId: result.nextNode }
-					: undefined,
-			});
-		}
-
-		currentId = result.nextNode;
 	}
+	return errors;
+}
 
-	return withCost({
-		steps: executedSteps,
-		success: true,
+/**
+ * Run a workflow one step at a time. Each step names the next step through the
+ * `nextNode` of its result. The run stops at the first failure, at an approval
+ * gate, or when a step returns no `nextNode`.
+ */
+export async function runWorkflow(
+	steps: Record<string, WorkflowStep>,
+	startNode: string,
+	registry: NodeRegistry,
+	context: Context,
+	options: WorkflowOptions = {},
+): Promise<WorkflowResult> {
+	const run = new Run(steps, context, options, options.id);
+	const problems = validateWorkflow(steps, startNode, registry);
+	if (problems.length > 0) {
+		return run.fail({
+			code: "INVALID_WORKFLOW",
+			message: `Invalid workflow: ${problems.join("; ")}`,
+		});
+	}
+	await run.start();
+	return execute(run, startNode, registry);
+}
+
+/**
+ * Continue a run that paused at an approval gate. Pass the same context, or one
+ * restored with `ExecutionContext.fromJSON` from the paused run's snapshot.
+ */
+export async function resumeWorkflow(
+	paused: WorkflowResult,
+	steps: Record<string, WorkflowStep>,
+	registry: NodeRegistry,
+	context: Context,
+	options: WorkflowOptions = {},
+): Promise<WorkflowResult> {
+	const run = new Run(steps, context, options, options.id ?? paused.id);
+	const gate = paused.steps.at(-1);
+	if (!paused.success || !paused.pausedAt || gate?.stepId !== paused.pausedAt) {
+		return run.fail({
+			code: "RESUME_INVALID",
+			message: "Cannot resume: the result did not pause at an approval gate",
+		});
+	}
+	run.executed.push(...paused.steps);
+	const next = gate.result.nextNode;
+	if (next === undefined) return run.finish({ success: true }, "completed");
+	await run.start();
+	return execute(run, next, registry);
+}
+
+export interface ResumeByIdOptions extends WorkflowOptions {
+	store: WorkflowStore;
+	services?: NodeServices;
+	credentials?: NodeCredentials;
+}
+
+/**
+ * Load a paused run from the store and continue it. The store moves the run
+ * from "paused" to "running" in one step, so a second resume of the same run fails.
+ */
+export async function resumeById(
+	id: string,
+	registry: NodeRegistry,
+	options: ResumeByIdOptions,
+): Promise<WorkflowResult> {
+	const { store, services, credentials } = options;
+	const state = await store.load(id);
+	const claimed = state && (await store.transition(id, "paused", "running"));
+	if (!state || !claimed) {
+		return {
+			id,
+			success: false,
+			steps: state?.result.steps ?? [],
+			error: {
+				code: "RESUME_INVALID",
+				message: state
+					? `Cannot resume: workflow "${id}" is not paused`
+					: `Cannot resume: no workflow with id "${id}"`,
+			},
+		};
+	}
+	const context = ExecutionContext.fromJSON(
+		state.contextSnapshot,
+		services,
+		credentials,
+	);
+	return resumeWorkflow(state.result, state.steps, registry, context, {
+		...options,
+		id,
 	});
 }
 
-async function executeWithConfig(
+async function execute(
+	run: Run,
+	startNode: string,
 	registry: NodeRegistry,
-	nodeType: string,
-	input: unknown,
-	context: ExecutionContext,
-	config: NodeExecutionConfig,
-): Promise<NodeResult> {
-	let lastErr: unknown;
-	const maxAttempts = Math.max(1, config.retryCount + 1);
+): Promise<WorkflowResult> {
+	const { steps, context, options } = run;
+	// Without a caller value, the workflow sets the bound: a run without a loop
+	// visits each step at most once, so it never needs more steps than it has.
+	const maxSteps = options.maxSteps ?? Object.keys(steps).length;
+	let current: string | undefined = startNode;
 
-	for (let attempt = 0; attempt < maxAttempts; attempt++) {
-		let timedOut = false;
+	while (current !== undefined) {
+		const step: WorkflowStep | undefined = steps[current];
+		if (!step) {
+			return run.fail({
+				code: "STEP_NOT_FOUND",
+				message: `Step "${current}" is not in the workflow`,
+				stepId: current,
+			});
+		}
+		if (run.executed.length >= maxSteps) {
+			return run.fail({
+				code: "MAX_STEPS_EXCEEDED",
+				message: `Workflow exceeded ${maxSteps} steps at step "${current}". A workflow that loops must set maxSteps`,
+				stepId: current,
+			});
+		}
 
-		try {
-			if (config.timeoutMs > 0 && config.timeoutMs < 30000) {
-				const result = await Promise.race([
-					registry.execute(nodeType, input, context),
-					new Promise<never>((_, reject) =>
-						setTimeout(() => {
-							timedOut = true;
-							reject(
-								new Error(
-									`Node "${nodeType}" timed out after ${config.timeoutMs}ms`,
-								),
-							);
-						}, config.timeoutMs),
-					),
-				]);
-				return result;
-			}
-			return await registry.execute(nodeType, input, context);
-		} catch (err) {
-			lastErr = err;
-			if (timedOut) throw err;
-			if (attempt < maxAttempts - 1) {
-				await new Promise((r) => setTimeout(r, 100 * 2 ** attempt));
-			}
+		const outcome = await runStep(current, step, registry, context, options);
+		run.executed.push(outcome.record);
+		if (outcome.record.result.output !== undefined) {
+			context.setNodeOutput(current, outcome.record.result.output);
+		}
+		await options.onStep?.(outcome.event);
+
+		if (!outcome.ok) return run.fail(outcome.error);
+		if (outcome.record.result.approvalRequired) {
+			return run.finish({ success: true, pausedAt: current }, "paused");
+		}
+		current = outcome.record.result.nextNode;
+	}
+	return run.finish({ success: true }, "completed");
+}
+
+/** Bookkeeping of one sequential run: the trace, the cost and the store. */
+class Run {
+	readonly executed: StepRecord[] = [];
+	private readonly id?: string;
+
+	constructor(
+		readonly steps: Record<string, WorkflowStep>,
+		readonly context: Context,
+		readonly options: WorkflowOptions,
+		id: string | undefined,
+	) {
+		if (options.store) {
+			this.id = id ?? randomUUID();
+			// Nodes such as the approval gate read the run ID from here.
+			context.set("workflow", { id: this.id });
 		}
 	}
-	throw lastErr;
+
+	async start(): Promise<void> {
+		await this.save({ success: true, steps: this.executed }, "running");
+	}
+
+	fail(error: WorkflowError): Promise<WorkflowResult> {
+		return this.finish({ success: false, error }, "error");
+	}
+
+	async finish(
+		outcome: Pick<WorkflowResult, "success" | "pausedAt" | "error">,
+		status: WorkflowStatus,
+	): Promise<WorkflowResult> {
+		const result: WorkflowResult = { ...outcome, steps: this.executed };
+		if (this.id) result.id = this.id;
+		if (this.options.costTracker)
+			result.cost = this.options.costTracker.report();
+		await this.save(result, status);
+		return result;
+	}
+
+	private async save(result: WorkflowResult, status: WorkflowStatus) {
+		const { store } = this.options;
+		if (!store || !this.id) return;
+		await store.save({
+			id: this.id,
+			status,
+			result,
+			contextSnapshot: this.context.snapshot(),
+			steps: this.steps,
+			updatedAt: new Date().toISOString(),
+		});
+	}
 }

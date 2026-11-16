@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
+import type { WorkflowState, WorkflowStatus } from "../../src/core/stores.js";
 import {
 	createMemoryCacheStore,
-	createMemoryRateLimitStore,
+	createMemoryStore,
 } from "../../src/core/stores.js";
 
 describe("CacheStore", () => {
@@ -45,43 +46,64 @@ describe("CacheStore", () => {
 	});
 });
 
-describe("RateLimitStore", () => {
-	it("increments and returns count", async () => {
-		const store = createMemoryRateLimitStore();
-		expect(await store.increment("key", 60000)).toBe(1);
-		expect(await store.increment("key", 60000)).toBe(2);
-		expect(await store.increment("key", 60000)).toBe(3);
+const makeState = (
+	id: string,
+	status: WorkflowStatus = "completed",
+): WorkflowState => ({
+	id,
+	status,
+	result: { steps: [], success: status === "completed" },
+	contextSnapshot: { key: "value" },
+	steps: { start: { nodeType: "test", input: {} } },
+	updatedAt: "2026-01-01T00:00:00.000Z",
+});
+
+describe("createMemoryStore", () => {
+	it("saves and loads a state", async () => {
+		const store = createMemoryStore();
+		const state = makeState("wf-1");
+		await store.save(state);
+		expect(await store.load("wf-1")).toEqual(state);
 	});
 
-	it("reports not limited below threshold", async () => {
-		const store = createMemoryRateLimitStore();
-		await store.increment("key", 60000);
-		expect(await store.isLimited("key", 5, 60000)).toBe(false);
+	it("returns undefined for an unknown ID", async () => {
+		expect(await createMemoryStore().load("nonexistent")).toBeUndefined();
 	});
 
-	it("reports limited at threshold", async () => {
-		const store = createMemoryRateLimitStore();
-		for (let i = 0; i < 5; i++) {
-			await store.increment("key", 60000);
-		}
-		expect(await store.isLimited("key", 5, 60000)).toBe(true);
+	it("overwrites an existing state", async () => {
+		const store = createMemoryStore();
+		await store.save(makeState("wf-1", "paused"));
+		await store.save(makeState("wf-1", "completed"));
+		expect((await store.load("wf-1"))?.status).toBe("completed");
 	});
 
-	it("resets after window expires", async () => {
-		const store = createMemoryRateLimitStore();
-		await store.increment("key", 1); // 1ms window
-		await store.increment("key", 1);
-		await new Promise((r) => setTimeout(r, 10));
-		expect(await store.isLimited("key", 2, 1)).toBe(false);
-		expect(await store.increment("key", 1)).toBe(1);
+	it("keeps deep copies, so mutations do not leak", async () => {
+		const store = createMemoryStore();
+		const state = makeState("wf-1");
+		await store.save(state);
+		state.contextSnapshot.key = "mutated";
+		const loaded = await store.load("wf-1");
+		expect(loaded?.contextSnapshot.key).toBe("value");
+		if (loaded) loaded.contextSnapshot.key = "mutated-again";
+		expect((await store.load("wf-1"))?.contextSnapshot.key).toBe("value");
 	});
 
-	it("tracks keys independently", async () => {
-		const store = createMemoryRateLimitStore();
-		await store.increment("a", 60000);
-		await store.increment("a", 60000);
-		await store.increment("b", 60000);
-		expect(await store.isLimited("a", 2, 60000)).toBe(true);
-		expect(await store.isLimited("b", 2, 60000)).toBe(false);
+	it("lists all states or the states with one status", async () => {
+		const store = createMemoryStore();
+		await store.save(makeState("a", "paused"));
+		await store.save(makeState("b", "completed"));
+		await store.save(makeState("c", "paused"));
+		expect(await store.list()).toHaveLength(3);
+		const paused = await store.list("paused");
+		expect(paused.map((s) => s.id).sort()).toEqual(["a", "c"]);
+	});
+
+	it("transitions only from the expected status", async () => {
+		const store = createMemoryStore();
+		await store.save(makeState("wf-1", "paused"));
+		expect(await store.transition("wf-1", "paused", "running")).toBe(true);
+		expect(await store.transition("wf-1", "paused", "running")).toBe(false);
+		expect((await store.load("wf-1"))?.status).toBe("running");
+		expect(await store.transition("missing", "paused", "running")).toBe(false);
 	});
 });

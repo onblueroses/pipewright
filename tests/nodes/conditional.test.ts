@@ -87,6 +87,13 @@ describe("conditionalNode - condition types", () => {
 			});
 			expect(r.matched).toBe(true);
 		});
+
+		it("does not match when values are equal", async () => {
+			const r = await runConditional("status", "not_equals", "active", {
+				status: "active",
+			});
+			expect(r.matched).toBe(false);
+		});
 	});
 
 	describe("greater_than", () => {
@@ -113,33 +120,38 @@ describe("conditionalNode - condition types", () => {
 			const r = await runConditional("score", "less_than", 10, { score: 3 });
 			expect(r.matched).toBe(true);
 		});
+
+		it("does not match when resolved >= value", async () => {
+			const r = await runConditional("score", "less_than", 3, { score: 5 });
+			expect(r.matched).toBe(false);
+		});
 	});
 
 	describe("contains", () => {
 		it("matches substring in string", async () => {
-			const r = await runConditional("title", "contains", "overview", {
-				title: "Technology overview document",
+			const r = await runConditional("title", "contains", "Release", {
+				title: "Release 2.0 notes",
 			});
 			expect(r.matched).toBe(true);
 		});
 
 		it("does not match missing substring", async () => {
-			const r = await runConditional("title", "contains", "bitcoin", {
-				title: "Technology overview document",
+			const r = await runConditional("title", "contains", "Bitcoin", {
+				title: "Release 2.0 notes",
 			});
 			expect(r.matched).toBe(false);
 		});
 
 		it("matches item in array", async () => {
-			const r = await runConditional("tags", "contains", "web", {
-				tags: ["web", "api"],
+			const r = await runConditional("tags", "contains", "news", {
+				tags: ["news", "sport"],
 			});
 			expect(r.matched).toBe(true);
 		});
 
 		it("does not match missing array item", async () => {
 			const r = await runConditional("tags", "contains", "crypto", {
-				tags: ["web", "api"],
+				tags: ["news", "sport"],
 			});
 			expect(r.matched).toBe(false);
 		});
@@ -168,8 +180,22 @@ describe("conditionalNode - condition types", () => {
 
 	describe("not_contains", () => {
 		it("matches when substring is absent", async () => {
-			const r = await runConditional("title", "not_contains", "bitcoin", {
-				title: "Technology overview document",
+			const r = await runConditional("title", "not_contains", "Bitcoin", {
+				title: "Release 2.0 notes",
+			});
+			expect(r.matched).toBe(true);
+		});
+
+		it("does not match when substring is present", async () => {
+			const r = await runConditional("title", "not_contains", "Release", {
+				title: "Release 2.0 notes",
+			});
+			expect(r.matched).toBe(false);
+		});
+
+		it("matches when array does not contain item", async () => {
+			const r = await runConditional("tags", "not_contains", "crypto", {
+				tags: ["news", "sport"],
 			});
 			expect(r.matched).toBe(true);
 		});
@@ -187,10 +213,18 @@ describe("conditionalNode - condition types", () => {
 			});
 			expect(r.matched).toBe(true);
 		});
+
+		it("does not match when variable is defined", async () => {
+			const r = await runConditional("result", "not_exists", undefined, {
+				result: 42,
+			});
+			expect(r.matched).toBe(false);
+		});
 	});
 
 	describe("numeric coercion", () => {
 		it("coerces string value to number for greater_than", async () => {
+			// Simulates what happens when value comes through interpolation as a string
 			const r = await runConditional("score", "greater_than", "3", {
 				score: 5,
 			});
@@ -223,6 +257,7 @@ describe("conditionalNode - condition types", () => {
 			registry.register(terminalNode("false_branch"));
 
 			const ctx = createExecutionContext();
+			// Simulate a previous node having stored output
 			ctx.setNodeOutput("fetch", { count: 7 });
 
 			const result = await runWorkflow(

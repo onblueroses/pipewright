@@ -1,3 +1,6 @@
+// Core engine. This entry needs Zod only.
+// Integration and AI nodes: "pipewright/nodes". Store and approval server: "pipewright/infra".
+
 export type { NodeExecutionConfig } from "./core/config.js";
 export { resolveNodeConfig } from "./core/config.js";
 export { createExecutionContext, ExecutionContext } from "./core/context.js";
@@ -17,34 +20,55 @@ export {
 	createCostTracker,
 	wrapLLMService,
 } from "./core/cost.js";
-export { defineNode } from "./core/node.js";
-export { createRegistry, NodeRegistry } from "./core/registry.js";
-export type { CacheStore, RateLimitStore } from "./core/stores.js";
-export {
-	createMemoryCacheStore,
-	createMemoryRateLimitStore,
-} from "./core/stores.js";
 export type {
-	NodeCapabilities,
+	DAGDefinition,
+	DAGEdge,
+	DAGNode,
+	DAGOptions,
+} from "./core/dag.js";
+export { runDAGWorkflow, topologicalSort, validateDAG } from "./core/dag.js";
+export { defineNode } from "./core/node.js";
+export {
+	createRegistry,
+	NodeRegistry,
+	NodeValidationError,
+} from "./core/registry.js";
+export type { StepOptions, StepOutcome } from "./core/step.js";
+export { NodeTimeoutError, runStep } from "./core/step.js";
+export type {
+	CacheStore,
+	WorkflowState,
+	WorkflowStatus,
+	WorkflowStore,
+} from "./core/stores.js";
+export { createMemoryCacheStore, createMemoryStore } from "./core/stores.js";
+export type {
+	AnyNodeDefinition,
+	ApprovalNotifier,
+	ExecOptions,
+	ExecResult,
+	ExecService,
+	KnownCredentials,
 	NodeCategory,
+	NodeCredentials,
 	NodeDefinition,
 	NodeExecutor,
 	NodeMetadata,
 	NodeResult,
 	NodeServices,
-	PreparationError,
-	PreparedWorkflow,
 	StepEvent,
-	WorkflowCursor,
+	StepRecord,
+	WorkflowError,
+	WorkflowErrorCode,
 	WorkflowResult,
 	WorkflowStep,
 } from "./core/types.js";
-export type { WorkflowOptions } from "./core/workflow.js";
+export type { ResumeByIdOptions, WorkflowOptions } from "./core/workflow.js";
 export {
-	PrepareError,
-	prepareWorkflow,
+	resumeById,
 	resumeWorkflow,
 	runWorkflow,
+	validateWorkflow,
 } from "./core/workflow.js";
 export type { ConditionType } from "./nodes/shared/evaluate.js";
 export { CONDITION_TYPES, evaluate } from "./nodes/shared/evaluate.js";
@@ -57,11 +81,6 @@ import { testGateNode } from "./nodes/logic/test-gate.js";
 import { filterNode } from "./nodes/transform/filter.js";
 import { mapNode } from "./nodes/transform/map.js";
 
-export type {
-	ExecOptions,
-	ExecResult,
-	ExecService,
-} from "./nodes/logic/test-gate.js";
 export {
 	approvalGateNode,
 	conditionalNode,
@@ -72,12 +91,13 @@ export {
 	testGateNode,
 };
 
+/** The logic and transform nodes. Register them with `registry.registerAll(builtInNodes)`. */
 export const builtInNodes = [
+	approvalGateNode,
 	conditionalNode,
 	delayNode,
 	endNode,
+	testGateNode,
 	mapNode,
 	filterNode,
-	approvalGateNode,
-	testGateNode,
 ] as const;

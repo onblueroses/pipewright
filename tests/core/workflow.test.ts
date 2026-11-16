@@ -3,14 +3,16 @@ import { z } from "zod";
 import { createExecutionContext } from "../../src/core/context.js";
 import { defineNode } from "../../src/core/node.js";
 import { createRegistry } from "../../src/core/registry.js";
+import { createMemoryStore } from "../../src/core/stores.js";
 import type { StepEvent } from "../../src/core/types.js";
 import {
-	PrepareError,
-	prepareWorkflow,
+	resumeById,
 	resumeWorkflow,
 	runWorkflow,
+	validateWorkflow,
 } from "../../src/core/workflow.js";
 
+// Helpers
 const makeNode = (type: string, output: unknown, nextNode?: string) =>
 	defineNode({
 		type,
@@ -31,7 +33,7 @@ const makeFailNode = (type: string, error = "something went wrong") =>
 		executor: async () => ({ success: false, error }),
 	});
 
-const makeApprovalNode = (type: string) =>
+const makeApprovalNode = (type: string, nextNode?: string) =>
 	defineNode({
 		type,
 		name: type,
@@ -42,6 +44,7 @@ const makeApprovalNode = (type: string) =>
 			success: true,
 			output: { pending: true },
 			approvalRequired: true,
+			nextNode,
 		}),
 	});
 
@@ -158,7 +161,10 @@ describe("runWorkflow", () => {
 		);
 
 		expect(result.success).toBe(false);
-		expect(result.error).toContain("something went wrong");
+		expect(result.error?.code).toBe("NODE_FAILED");
+		expect(result.error?.message).toContain("something went wrong");
+		expect(result.error?.stepId).toBe("start");
+		expect(result.error?.nodeType).toBe("bad_node");
 	});
 
 	it("halts on approvalRequired and sets pausedAt", async () => {
@@ -179,7 +185,7 @@ describe("runWorkflow", () => {
 
 		expect(result.success).toBe(true);
 		expect(result.pausedAt).toBe("review");
-		expect(result.steps).toHaveLength(1);
+		expect(result.steps).toHaveLength(1); // halted before 'after'
 	});
 
 	it("returns error for missing step ID", async () => {
@@ -195,7 +201,9 @@ describe("runWorkflow", () => {
 		);
 
 		expect(result.success).toBe(false);
-		expect(result.error).toContain("nonexistent");
+		expect(result.error?.code).toBe("STEP_NOT_FOUND");
+		expect(result.error?.message).toContain("nonexistent");
+		expect(result.error?.stepId).toBe("nonexistent");
 	});
 
 	it("catches executor exceptions and returns error", async () => {
@@ -221,11 +229,41 @@ describe("runWorkflow", () => {
 		);
 
 		expect(result.success).toBe(false);
-		expect(result.error).toContain("executor exploded");
+		expect(result.error?.code).toBe("NODE_THREW");
+		expect(result.error?.message).toContain("executor exploded");
+		expect(result.error?.stepId).toBe("start");
+		expect(result.error?.nodeType).toBe("thrower");
+	});
+
+	it("catches ZodError as VALIDATION_ERROR", async () => {
+		const strictNode = defineNode({
+			type: "strict",
+			name: "Strict",
+			category: "action",
+			inputSchema: z.object({ required: z.string() }),
+			outputSchema: z.unknown(),
+			executor: async () => ({ success: true, output: {} }),
+		});
+		const registry = createRegistry();
+		registry.register(strictNode);
+		const ctx = createExecutionContext();
+
+		const result = await runWorkflow(
+			{ start: { nodeType: "strict", input: { wrong: "field" } } },
+			"start",
+			registry,
+			ctx,
+		);
+
+		expect(result.success).toBe(false);
+		expect(result.error?.code).toBe("VALIDATION_ERROR");
+		expect(result.error?.stepId).toBe("start");
+		expect(result.error?.nodeType).toBe("strict");
 	});
 
 	it("stops with error when maxSteps exceeded (cycle protection)", async () => {
 		const registry = createRegistry();
+		// Two nodes that point at each other
 		const pingNode = defineNode({
 			type: "ping",
 			name: "Ping",
@@ -257,8 +295,54 @@ describe("runWorkflow", () => {
 		);
 
 		expect(result.success).toBe(false);
-		expect(result.error).toContain("maximum of 10 steps");
+		expect(result.error?.code).toBe("MAX_STEPS_EXCEEDED");
+		expect(result.error?.message).toContain("exceeded 10 steps");
 		expect(result.steps).toHaveLength(10);
+	});
+
+	it("bounds a loop by the workflow size when maxSteps is unset", async () => {
+		const registry = createRegistry();
+		registry.registerAll([
+			makeNode("ping", {}, "b"),
+			makeNode("pong", {}, "a"),
+		]);
+		const result = await runWorkflow(
+			{
+				a: { nodeType: "ping", input: {} },
+				b: { nodeType: "pong", input: {} },
+			},
+			"a",
+			registry,
+			createExecutionContext(),
+		);
+		expect(result.error?.code).toBe("MAX_STEPS_EXCEEDED");
+		expect(result.error?.message).toContain("must set maxSteps");
+		expect(result.steps).toHaveLength(2);
+	});
+
+	it("respects custom maxSteps option", async () => {
+		const registry = createRegistry();
+		const loopNode = defineNode({
+			type: "loop",
+			name: "Loop",
+			category: "action",
+			inputSchema: z.object({}).passthrough(),
+			outputSchema: z.object({}),
+			executor: async () => ({ success: true, output: {}, nextNode: "a" }),
+		});
+		registry.register(loopNode);
+		const ctx = createExecutionContext();
+
+		const result = await runWorkflow(
+			{ a: { nodeType: "loop", input: {} } },
+			"a",
+			registry,
+			ctx,
+			{ maxSteps: 3 },
+		);
+
+		expect(result.success).toBe(false);
+		expect(result.steps).toHaveLength(3);
 	});
 
 	it("passes actual arrays between nodes via {{ref}} interpolation", async () => {
@@ -308,6 +392,7 @@ describe("runWorkflow", () => {
 
 	it("supports branching via conditional nextNode", async () => {
 		const registry = createRegistry();
+		// A node that always routes to 'branch_b'
 		const routerNode = defineNode({
 			type: "router",
 			name: "Router",
@@ -334,13 +419,14 @@ describe("runWorkflow", () => {
 
 		expect(result.success).toBe(true);
 		expect(result.steps).toHaveLength(2);
-		expect(result.steps[1].nodeType).toBe("step_b");
+		expect(result.steps[1].nodeType).toBe("step_b"); // went to b, not a
 	});
 });
 
 describe("resumeWorkflow", () => {
 	it("resumes after approval gate and completes remaining steps", async () => {
 		const registry = createRegistry();
+		// approval node that routes to 'after' on nextNode
 		const approvalNode = defineNode({
 			type: "needs_review",
 			name: "needs_review",
@@ -363,10 +449,12 @@ describe("resumeWorkflow", () => {
 			after: { nodeType: "after_review", input: {} },
 		};
 
+		// First run pauses at review
 		const paused = await runWorkflow(steps, "review", registry, ctx);
 		expect(paused.pausedAt).toBe("review");
 		expect(paused.steps).toHaveLength(1);
 
+		// Resume continues from the nextNode
 		const resumed = await resumeWorkflow(paused, steps, registry, ctx);
 		expect(resumed.success).toBe(true);
 		expect(resumed.steps).toHaveLength(2);
@@ -444,7 +532,8 @@ describe("resumeWorkflow", () => {
 		);
 
 		expect(result.success).toBe(false);
-		expect(result.error).toContain("not paused");
+		expect(result.error?.code).toBe("RESUME_INVALID");
+		expect(result.error?.message).toContain("did not pause");
 	});
 
 	it("fires onStep hook only for resumed steps, not prior ones", async () => {
@@ -476,10 +565,13 @@ describe("resumeWorkflow", () => {
 
 		const events: StepEvent[] = [];
 		const resumed = await resumeWorkflow(paused, steps, registry, ctx, {
-			onStep: (e) => events.push(e),
+			onStep: (e) => {
+				events.push(e);
+			},
 		});
 
 		expect(resumed.success).toBe(true);
+		// onStep should only fire for 'after' (the resumed step), not 'review' (prior)
 		expect(events).toHaveLength(1);
 		expect(events[0].stepId).toBe("after");
 		expect(events[0].nodeType).toBe("after_review");
@@ -487,6 +579,7 @@ describe("resumeWorkflow", () => {
 
 	it("completes when paused node had no nextNode", async () => {
 		const registry = createRegistry();
+		// Approval node with no nextNode
 		const terminalApproval = defineNode({
 			type: "final_review",
 			name: "final_review",
@@ -497,6 +590,7 @@ describe("resumeWorkflow", () => {
 				success: true,
 				output: { pending: true },
 				approvalRequired: true,
+				// no nextNode
 			}),
 		});
 		registry.register(terminalApproval);
@@ -508,181 +602,7 @@ describe("resumeWorkflow", () => {
 
 		const resumed = await resumeWorkflow(paused, steps, registry, ctx);
 		expect(resumed.success).toBe(true);
-		expect(resumed.steps).toHaveLength(1);
-	});
-});
-
-describe("prepareWorkflow", () => {
-	it("returns PreparedWorkflow for valid steps and registry", () => {
-		const registry = createRegistry();
-		registry.register(makeNode("step_a", { a: 1 }, "b"));
-		registry.register(makeNode("step_b", { b: 2 }));
-
-		const steps = {
-			a: { nodeType: "step_a", input: {} },
-			b: { nodeType: "step_b", input: {} },
-		};
-
-		const prepared = prepareWorkflow(steps, registry);
-		expect(prepared._prepared).toBe(true);
-		expect(prepared.steps).toBe(steps);
-		expect(prepared.registry).toBe(registry);
-	});
-
-	it("throws PrepareError for unregistered node types", () => {
-		const registry = createRegistry();
-		registry.register(makeNode("step_a", {}));
-
-		const steps = {
-			a: { nodeType: "step_a", input: {} },
-			b: { nodeType: "missing_node", input: {} },
-		};
-
-		expect(() => prepareWorkflow(steps, registry)).toThrow(PrepareError);
-		try {
-			prepareWorkflow(steps, registry);
-		} catch (err) {
-			const e = err as PrepareError;
-			expect(e.errors).toHaveLength(1);
-			expect(e.errors[0].stepId).toBe("b");
-			expect(e.errors[0].issue).toContain("missing_node");
-		}
-	});
-
-	it("collects all errors when multiple node types are missing", () => {
-		const registry = createRegistry();
-
-		const steps = {
-			a: { nodeType: "missing_a", input: {} },
-			b: { nodeType: "missing_b", input: {} },
-		};
-
-		try {
-			prepareWorkflow(steps, registry);
-		} catch (err) {
-			const e = err as PrepareError;
-			expect(e.errors).toHaveLength(2);
-		}
-	});
-});
-
-describe("runWorkflow with PreparedWorkflow", () => {
-	it("runs a workflow from a prepared handle", async () => {
-		const registry = createRegistry();
-		registry.register(makeNode("step_a", { a: 1 }, "b"));
-		registry.register(makeNode("step_b", { b: 2 }));
-		const ctx = createExecutionContext();
-
-		const prepared = prepareWorkflow(
-			{
-				a: { nodeType: "step_a", input: {} },
-				b: { nodeType: "step_b", input: {} },
-			},
-			registry,
-		);
-
-		const result = await runWorkflow(prepared, "a", ctx);
-
-		expect(result.success).toBe(true);
-		expect(result.steps).toHaveLength(2);
-		expect(result.steps.map((s) => s.nodeType)).toEqual(["step_a", "step_b"]);
-	});
-
-	it("supports options with prepared workflow", async () => {
-		const registry = createRegistry();
-		registry.register(makeNode("step_a", { a: 1 }));
-		const ctx = createExecutionContext();
-		const events: StepEvent[] = [];
-
-		const prepared = prepareWorkflow(
-			{ a: { nodeType: "step_a", input: {} } },
-			registry,
-		);
-
-		await runWorkflow(prepared, "a", ctx, {
-			onStep: (e) => events.push(e),
-		});
-
-		expect(events).toHaveLength(1);
-		expect(events[0].nodeType).toBe("step_a");
-	});
-});
-
-describe("resumeWorkflow with cursor", () => {
-	it("paused result includes cursor with nextNode", async () => {
-		const registry = createRegistry();
-		const approvalNode = defineNode({
-			type: "needs_review",
-			name: "needs_review",
-			category: "action",
-			inputSchema: z.object({}).passthrough(),
-			outputSchema: z.object({ pending: z.boolean() }),
-			executor: async () => ({
-				success: true,
-				output: { pending: true },
-				approvalRequired: true,
-				nextNode: "after",
-			}),
-		});
-		registry.register(approvalNode);
-		registry.register(makeNode("after_review", { done: true }));
-		const ctx = createExecutionContext();
-
-		const steps = {
-			review: { nodeType: "needs_review", input: {} },
-			after: { nodeType: "after_review", input: {} },
-		};
-
-		const paused = await runWorkflow(steps, "review", registry, ctx);
-		expect(paused.cursor).toBeDefined();
-		expect(paused.cursor!.currentStepId).toBe("after");
-	});
-
-	it("paused result has no cursor when no nextNode", async () => {
-		const registry = createRegistry();
-		const terminalApproval = defineNode({
-			type: "final_review",
-			name: "final_review",
-			category: "action",
-			inputSchema: z.object({}).passthrough(),
-			outputSchema: z.object({ pending: z.boolean() }),
-			executor: async () => ({
-				success: true,
-				output: { pending: true },
-				approvalRequired: true,
-			}),
-		});
-		registry.register(terminalApproval);
-		const ctx = createExecutionContext();
-
-		const paused = await runWorkflow(
-			{ review: { nodeType: "final_review", input: {} } },
-			"review",
-			registry,
-			ctx,
-		);
-		expect(paused.cursor).toBeUndefined();
-	});
-
-	it("resumes from cursor", async () => {
-		const registry = createRegistry();
-		registry.register(makeNode("step_a", { a: 1 }, "b"));
-		registry.register(makeNode("step_b", { b: 2 }));
-		const ctx = createExecutionContext();
-
-		const result = await resumeWorkflow(
-			{ currentStepId: "b" },
-			{
-				a: { nodeType: "step_a", input: {} },
-				b: { nodeType: "step_b", input: {} },
-			},
-			registry,
-			ctx,
-		);
-
-		expect(result.success).toBe(true);
-		expect(result.steps).toHaveLength(1);
-		expect(result.steps[0].nodeType).toBe("step_b");
+		expect(resumed.steps).toHaveLength(1); // just the original step, nothing more to run
 	});
 });
 
@@ -702,7 +622,11 @@ describe("onStep hook", () => {
 			"a",
 			registry,
 			ctx,
-			{ onStep: (e) => events.push(e) },
+			{
+				onStep: (e) => {
+					events.push(e);
+				},
+			},
 		);
 
 		expect(events).toHaveLength(2);
@@ -736,13 +660,17 @@ describe("onStep hook", () => {
 			"s",
 			registry,
 			ctx,
-			{ onStep: (e) => events.push(e) },
+			{
+				onStep: (e) => {
+					events.push(e);
+				},
+			},
 		);
 
-		expect(events[0].durationMs).toBeGreaterThanOrEqual(40);
+		expect(events[0].durationMs).toBeGreaterThanOrEqual(40); // allow slight timer variance
 	});
 
-	it("does not fire for steps that throw", async () => {
+	it("fires for a step that throws", async () => {
 		const throwingNode = defineNode({
 			type: "thrower",
 			name: "Thrower",
@@ -763,11 +691,16 @@ describe("onStep hook", () => {
 			"s",
 			registry,
 			ctx,
-			{ onStep: (e) => events.push(e) },
+			{
+				onStep: (e) => {
+					events.push(e);
+				},
+			},
 		);
 
 		expect(result.success).toBe(false);
-		expect(events).toHaveLength(0);
+		expect(events).toHaveLength(1);
+		expect(events[0].result.success).toBe(false);
 	});
 
 	it("fires on failed nodes (success: false)", async () => {
@@ -781,10 +714,347 @@ describe("onStep hook", () => {
 			"s",
 			registry,
 			ctx,
-			{ onStep: (e) => events.push(e) },
+			{
+				onStep: (e) => {
+					events.push(e);
+				},
+			},
 		);
 
 		expect(events).toHaveLength(1);
 		expect(events[0].result.success).toBe(false);
+	});
+});
+
+describe("persistence", () => {
+	it("auto-persists on completion when store provided", async () => {
+		const registry = createRegistry();
+		registry.register(makeNode("step_a", { v: 1 }));
+		const ctx = createExecutionContext();
+		const store = createMemoryStore();
+
+		const result = await runWorkflow(
+			{ a: { nodeType: "step_a", input: {} } },
+			"a",
+			registry,
+			ctx,
+			{ store },
+		);
+
+		expect(result.id).toBeDefined();
+		const state = await store.load(result.id!);
+		expect(state).toBeDefined();
+		expect(state?.status).toBe("completed");
+		expect(state?.result.success).toBe(true);
+	});
+
+	it("auto-persists on pause", async () => {
+		const registry = createRegistry();
+		registry.register(makeApprovalNode("gate"));
+		const ctx = createExecutionContext();
+		const store = createMemoryStore();
+
+		const result = await runWorkflow(
+			{ g: { nodeType: "gate", input: {} } },
+			"g",
+			registry,
+			ctx,
+			{ store },
+		);
+
+		expect(result.pausedAt).toBe("g");
+		const state = await store.load(result.id!);
+		expect(state?.status).toBe("paused");
+	});
+
+	it("auto-persists on error", async () => {
+		const registry = createRegistry();
+		registry.register(makeFailNode("bad"));
+		const ctx = createExecutionContext();
+		const store = createMemoryStore();
+
+		const result = await runWorkflow(
+			{ s: { nodeType: "bad", input: {} } },
+			"s",
+			registry,
+			ctx,
+			{ store },
+		);
+
+		expect(result.success).toBe(false);
+		const state = await store.load(result.id!);
+		expect(state?.status).toBe("error");
+	});
+
+	it("resumeById loads and resumes a paused workflow", async () => {
+		const registry = createRegistry();
+		const approvalNode = defineNode({
+			type: "gate",
+			name: "gate",
+			category: "action",
+			inputSchema: z.object({}).passthrough(),
+			outputSchema: z.object({ pending: z.boolean() }),
+			executor: async () => ({
+				success: true,
+				output: { pending: true },
+				approvalRequired: true,
+				nextNode: "after",
+			}),
+		});
+		registry.register(approvalNode);
+		registry.register(makeNode("done", { complete: true }));
+		const ctx = createExecutionContext();
+		const store = createMemoryStore();
+
+		const paused = await runWorkflow(
+			{
+				g: { nodeType: "gate", input: {} },
+				after: { nodeType: "done", input: {} },
+			},
+			"g",
+			registry,
+			ctx,
+			{ store },
+		);
+
+		expect(paused.pausedAt).toBe("g");
+
+		const resumed = await resumeById(paused.id!, registry, { store });
+		expect(resumed.success).toBe(true);
+		expect(resumed.steps).toHaveLength(2);
+		expect((await store.load(paused.id!))?.status).toBe("completed");
+
+		// The run is no longer paused, so a second approval cannot run it again.
+		const again = await resumeById(paused.id!, registry, { store });
+		expect(again.success).toBe(false);
+		expect(again.error?.code).toBe("RESUME_INVALID");
+	});
+
+	it("resumes a run only once when two resumes race", async () => {
+		const registry = createRegistry();
+		registry.register(makeApprovalNode("gate", "after"));
+		registry.register(makeNode("done", { complete: true }));
+		const store = createMemoryStore();
+		const steps = {
+			g: { nodeType: "gate", input: {} },
+			after: { nodeType: "done", input: {} },
+		};
+		const paused = await runWorkflow(
+			steps,
+			"g",
+			registry,
+			createExecutionContext(),
+			{
+				store,
+			},
+		);
+
+		const [a, b] = await Promise.all([
+			resumeById(paused.id!, registry, { store }),
+			resumeById(paused.id!, registry, { store }),
+		]);
+		expect([a.success, b.success].sort()).toEqual([false, true]);
+	});
+
+	it("resumeById fails for an unknown ID", async () => {
+		const result = await resumeById("missing", createRegistry(), {
+			store: createMemoryStore(),
+		});
+		expect(result.success).toBe(false);
+		expect(result.error?.code).toBe("RESUME_INVALID");
+	});
+
+	it("restores credentials and services on resume", async () => {
+		const registry = createRegistry();
+		registry.register(makeApprovalNode("gate", "after"));
+		registry.register(
+			defineNode({
+				type: "reads-creds",
+				name: "reads-creds",
+				category: "action",
+				inputSchema: z.object({}),
+				outputSchema: z.object({ hasKey: z.boolean() }),
+				executor: async (_input, context) => ({
+					success: true,
+					output: { hasKey: context.credentials?.openai?.apiKey === "sk-test" },
+				}),
+			}),
+		);
+		const store = createMemoryStore();
+		const steps = {
+			g: { nodeType: "gate", input: {} },
+			after: { nodeType: "reads-creds", input: {} },
+		};
+		const paused = await runWorkflow(
+			steps,
+			"g",
+			registry,
+			createExecutionContext(),
+			{
+				store,
+			},
+		);
+		const resumed = await resumeById(paused.id!, registry, {
+			store,
+			credentials: { openai: { apiKey: "sk-test" } },
+		});
+		expect(resumed.steps.at(-1)?.result.output).toEqual({ hasKey: true });
+		// Credentials are not part of the persisted snapshot.
+		expect(JSON.stringify(await store.load(paused.id!))).not.toContain(
+			"sk-test",
+		);
+	});
+
+	it("uses provided id when given", async () => {
+		const registry = createRegistry();
+		registry.register(makeNode("step_a", {}));
+		const ctx = createExecutionContext();
+		const store = createMemoryStore();
+
+		const result = await runWorkflow(
+			{ a: { nodeType: "step_a", input: {} } },
+			"a",
+			registry,
+			ctx,
+			{ store, id: "custom-id" },
+		);
+
+		expect(result.id).toBe("custom-id");
+		expect(await store.load("custom-id")).toBeDefined();
+	});
+
+	it("generates UUID when id not provided", async () => {
+		const registry = createRegistry();
+		registry.register(makeNode("step_a", {}));
+		const ctx = createExecutionContext();
+		const store = createMemoryStore();
+
+		const result = await runWorkflow(
+			{ a: { nodeType: "step_a", input: {} } },
+			"a",
+			registry,
+			ctx,
+			{ store },
+		);
+
+		expect(result.id).toMatch(
+			/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+		);
+	});
+});
+
+describe("validateWorkflow", () => {
+	it("collects every problem", () => {
+		const registry = createRegistry();
+		registry.register(makeNode("known", {}));
+		const errors = validateWorkflow(
+			{
+				a: { nodeType: "known", input: {} },
+				b: { nodeType: "missing-1", input: {} },
+				c: { nodeType: "missing-2", input: {} },
+			},
+			"nope",
+			registry,
+		);
+		expect(errors).toHaveLength(3);
+		expect(errors[0]).toContain('"nope"');
+	});
+
+	it("stops runWorkflow before the first step", async () => {
+		const registry = createRegistry();
+		const ran: string[] = [];
+		registry.register(
+			defineNode({
+				type: "known",
+				name: "known",
+				category: "action",
+				inputSchema: z.object({}),
+				outputSchema: z.object({}),
+				executor: async () => {
+					ran.push("known");
+					return { success: true, output: {}, nextNode: "b" };
+				},
+			}),
+		);
+		const result = await runWorkflow(
+			{
+				a: { nodeType: "known", input: {} },
+				b: { nodeType: "unregistered", input: {} },
+			},
+			"a",
+			registry,
+			createExecutionContext(),
+		);
+		expect(result.success).toBe(false);
+		expect(result.error?.code).toBe("INVALID_WORKFLOW");
+		expect(ran).toEqual([]);
+	});
+});
+
+describe("fail closed", () => {
+	it("fails a successful result whose output does not match the schema", async () => {
+		const registry = createRegistry();
+		registry.register(
+			defineNode({
+				type: "no-output",
+				name: "no-output",
+				category: "action",
+				inputSchema: z.object({}),
+				outputSchema: z.object({ value: z.string() }),
+				executor: async () => ({ success: true }) as never,
+			}),
+		);
+		const result = await runWorkflow(
+			{ a: { nodeType: "no-output", input: {} } },
+			"a",
+			registry,
+			createExecutionContext(),
+		);
+		expect(result.success).toBe(false);
+		expect(result.error?.code).toBe("VALIDATION_ERROR");
+		expect(result.error?.message).toContain("output validation failed");
+		expect(result.steps).toHaveLength(1);
+		expect(result.steps[0].result.success).toBe(false);
+	});
+
+	it("records the failed step and stops the run", async () => {
+		const registry = createRegistry();
+		registry.register(makeFailNode("bad"));
+		registry.register(makeNode("never", {}));
+		const result = await runWorkflow(
+			{
+				a: { nodeType: "bad", input: {} },
+				b: { nodeType: "never", input: {} },
+			},
+			"a",
+			registry,
+			createExecutionContext(),
+		);
+		expect(result.success).toBe(false);
+		expect(result.steps.map((s) => s.stepId)).toEqual(["a"]);
+	});
+
+	it("applies output schema defaults", async () => {
+		const registry = createRegistry();
+		registry.register(
+			defineNode({
+				type: "defaults",
+				name: "defaults",
+				category: "action",
+				inputSchema: z.object({}),
+				outputSchema: z.object({ tags: z.array(z.string()).default([]) }),
+				executor: async () => ({
+					success: true,
+					output: {} as { tags: string[] },
+				}),
+			}),
+		);
+		const result = await runWorkflow(
+			{ a: { nodeType: "defaults", input: {} } },
+			"a",
+			registry,
+			createExecutionContext(),
+		);
+		expect(result.steps[0].result.output).toEqual({ tags: [] });
 	});
 });

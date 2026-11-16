@@ -1,24 +1,14 @@
-/**
- * Pluggable store interfaces for caching and rate limiting.
- * Consumers swap in Redis/Memcached without touching core.
- */
+import type { WorkflowResult, WorkflowStep } from "./types.js";
 
+/** Cache for step results. Swap in Redis or similar without touching the core. */
 export interface CacheStore {
 	get(key: string): Promise<unknown | undefined>;
 	set(key: string, value: unknown, ttlMs?: number): Promise<void>;
 	delete(key: string): Promise<void>;
 }
 
-export interface RateLimitStore {
-	/** Increment the counter for a key within a sliding window. Returns current count. */
-	increment(key: string, windowMs: number): Promise<number>;
-	/** Check if the key has exceeded the limit within the window. */
-	isLimited(key: string, limit: number, windowMs: number): Promise<boolean>;
-}
-
 export function createMemoryCacheStore(): CacheStore {
 	const map = new Map<string, { value: unknown; expiresAt?: number }>();
-
 	return {
 		async get(key) {
 			const entry = map.get(key);
@@ -41,25 +31,64 @@ export function createMemoryCacheStore(): CacheStore {
 	};
 }
 
-export function createMemoryRateLimitStore(): RateLimitStore {
-	const map = new Map<string, { count: number; windowStart: number }>();
+export type WorkflowStatus =
+	| "running"
+	| "paused"
+	| "completed"
+	| "error"
+	| "rejected";
 
+/** Everything needed to resume a sequential run in another process. */
+export interface WorkflowState {
+	id: string;
+	status: WorkflowStatus;
+	result: WorkflowResult;
+	contextSnapshot: Record<string, unknown>;
+	steps: Record<string, WorkflowStep>;
+	updatedAt: string;
+}
+
+/**
+ * Persistence for sequential runs. The runner saves the state when a run starts,
+ * pauses, fails or completes.
+ */
+export interface WorkflowStore {
+	save(state: WorkflowState): Promise<void>;
+	load(id: string): Promise<WorkflowState | undefined>;
+	list(status?: WorkflowStatus): Promise<WorkflowState[]>;
+	/**
+	 * Change the status only if it is `from`, as one atomic step. Return false
+	 * when the run is missing or has another status.
+	 */
+	transition(
+		id: string,
+		from: WorkflowStatus,
+		to: WorkflowStatus,
+	): Promise<boolean>;
+}
+
+/** In-memory store for tests and examples. */
+export function createMemoryStore(): WorkflowStore {
+	const map = new Map<string, WorkflowState>();
 	return {
-		async increment(key, windowMs) {
-			const now = Date.now();
-			const entry = map.get(key);
-			if (!entry || now - entry.windowStart >= windowMs) {
-				map.set(key, { count: 1, windowStart: now });
-				return 1;
-			}
-			entry.count++;
-			return entry.count;
+		async save(state) {
+			map.set(state.id, structuredClone(state));
 		},
-		async isLimited(key, limit, windowMs) {
-			const now = Date.now();
-			const entry = map.get(key);
-			if (!entry || now - entry.windowStart >= windowMs) return false;
-			return entry.count >= limit;
+		async load(id) {
+			const state = map.get(id);
+			return state ? structuredClone(state) : undefined;
+		},
+		async list(status) {
+			return [...map.values()]
+				.filter((s) => status === undefined || s.status === status)
+				.map((s) => structuredClone(s));
+		},
+		async transition(id, from, to) {
+			const state = map.get(id);
+			if (state?.status !== from) return false;
+			state.status = to;
+			state.updatedAt = new Date().toISOString();
+			return true;
 		},
 	};
 }

@@ -10,8 +10,7 @@ import { runWorkflow } from "../../src/core/workflow.js";
 describe("resolveNodeConfig", () => {
 	it("returns defaults when no overrides", () => {
 		const config = resolveNodeConfig("myType", "step1");
-		expect(config.retryCount).toBe(0);
-		expect(config.timeoutMs).toBe(30000);
+		expect(config).toEqual({ retryCount: 0 });
 	});
 
 	it("applies nodeType override", () => {
@@ -99,7 +98,37 @@ describe("nodeConfig in workflow", () => {
 		);
 
 		expect(result.success).toBe(false);
-		expect(result.error).toContain("timed out");
+		expect(result.error?.message).toContain("timed out");
+	});
+
+	it("enforces a timeout above 30 seconds and clears the timer", async () => {
+		vi.useFakeTimers();
+		try {
+			const registry = createRegistry();
+			registry.register(
+				defineNode({
+					type: "hang",
+					name: "hang",
+					category: "action",
+					inputSchema: z.object({}),
+					outputSchema: z.object({}),
+					executor: () => new Promise(() => {}),
+				}),
+			);
+			const run = runWorkflow(
+				{ a: { nodeType: "hang", input: {} } },
+				"a",
+				registry,
+				createExecutionContext(),
+				{ nodeConfig: { hang: { timeoutMs: 60_000 } } },
+			);
+			await vi.advanceTimersByTimeAsync(60_000);
+			const result = await run;
+			expect(result.error?.message).toContain("timed out after 60000ms");
+			expect(vi.getTimerCount()).toBe(0);
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	it("caches node results", async () => {
